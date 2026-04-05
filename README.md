@@ -23,6 +23,22 @@ A modular hex map editor for hex-and-counter wargames. Build custom hex maps wit
 - NumPy
 - Windows 10/11
 
+## Installing Python and Related Packages
+
+### Installing Python 3
+
+Download the Python installer for Windows at https://www.python.org/downloads/windows/
+
+OR
+
+`choco install python3` (if you use chocolatey)
+
+### Installing Python Packages
+
+pip install pynum
+pip install numpy
+pip install pyinstaller
+
 ## Building a Standalone Executable
 
 Run from the project root directory (where `main.py` lives).
