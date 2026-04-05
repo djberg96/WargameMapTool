@@ -23,6 +23,27 @@ A modular hex map editor for hex-and-counter wargames. Build custom hex maps wit
 - NumPy
 - Windows 10/11
 
+## Building a Standalone Executable
+
+Run from the project root directory (where `main.py` lives).
+
+**Option A — Unpacked folder** (faster startup, recommended for distribution):
+
+```bash
+pyinstaller --onedir --windowed --noconfirm --icon=assets/icon.ico \
+  --add-data "assets;assets" --hidden-import PySide6.QtPrintSupport \
+  --name WargameMapTool main.py
+```
+
+**Option B — Single EXE** (slower startup due to extraction, easier to share):
+
+```bash
+pyinstaller --onefile --windowed --noconfirm --icon=assets/icon.ico \
+  --add-data "assets;assets" --hidden-import PySide6.QtPrintSupport \
+  --name WargameMapTool main.py
+```
+
+Output lands in `dist/WargameMapTool/` (onedir) or `dist/WargameMapTool.exe` (onefile).
 
 ## License
 
