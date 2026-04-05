@@ -35,7 +35,7 @@ OR
 
 ### Installing Python Packages
 
-pip install pynum
+pip install pyside6
 pip install numpy
 pip install pyinstaller
 
