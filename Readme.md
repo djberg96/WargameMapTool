@@ -1,0 +1,29 @@
+# Wargame Map Tool
+
+A modular hex map editor for hex-and-counter wargames. Build custom hex maps with a flexible layer-based system — no fixed modes, just combine layers as needed.
+
+## Features
+
+- **Hex Grid** — Flat-top or pointy-top orientation, configurable size (up to 100×100 hexes), optional half-hex clipping, megahex overlay etc.
+- **Background Layer** — Import and position reference images with built-in image editing (paint, posterize, color select, outline extraction)
+- **Fill Layer** — Solid color or texture fills per hex, with automatic hex-edge shading
+- **Asset Layer** — Place, scale, rotate, and flip image assets; per-layer erase mask; asset library with drag & drop
+- **Text Layer** — Fully styled text labels (font, size, color, outline, rotation, alignment)
+- **Hexside Layer** — Edge decorations with Catmull-Rom splines, control points, outline, auto-connect, and random waviness
+- **Path Layers** — Center-to-center paths and freeform freehand paths with foreground/background strokes, dashed/dotted line types, texture support, and control point editing
+- **Border Layer** — Hex edge borders with solid, dotted, or lined styles and offset control
+- **Sketch Layer** — Vector shapes (line, rectangle, polygon, ellipse, freehand) with fill, stroke, rotation, drop shadow, and optional draw-over-grid
+- **Draw Layer** — Freeform brush painting with multiple channels, color/texture modes, custom PNG brush stamps, eraser, and layer-level outline & shadow effects
+- **Export** — PNG (configurable DPI), PDF (vector), and `.hexmap` project files
+
+## Requirements
+
+- Python 3.13+
+- PySide6 6.10+
+- NumPy
+- Windows 10/11
+
+
+## License
+
+This project is covered by the Creative Commons Non-Commercial Share- Alike 4.0 International license. See LICENSE for details.
