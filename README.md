@@ -61,6 +61,21 @@ pyinstaller --onefile --windowed --noconfirm --icon=assets/icon.ico \
 
 Output lands in `dist/WargameMapTool/` (onedir) or `dist/WargameMapTool.exe` (onefile).
 
+## Running Locally
+
+In the source directory:
+
+```bash
+$ python3 -m venv venv
+$ source venv/bin/activate
+$ python3 -m pip install numpy
+$ python3 -m pip install pyside6
+$ python3 main.py
+```
+
+The commands to generate the venv and pip install packages are only needed
+once. After that you can simply activate and run.
+
 ## License
 
 This project is covered by the GNU GENERAL PUBLIC LICENSE Version 3. See LICENSE for details.
