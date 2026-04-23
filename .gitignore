@@ -13,3 +13,6 @@ env/
 *.log
 .DS_Store
 Thumbs.db
+crystal_port/bin/
+crystal_port/lib/
+*.vscode
