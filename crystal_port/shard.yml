@@ -1,0 +1,19 @@
+name: wargame_map_tool_crystal
+version: 0.1.0
+
+authors:
+  - David Berger
+
+crystal: ">= 1.11.0"
+
+dependencies:
+  qt6:
+    path: ../../crystal-qt6
+  num:
+    github: crystal-data/num.cr
+
+targets:
+  wargame_map_tool_crystal:
+    main: src/wargame_map_tool_crystal.cr
+
+license: GPL-3.0-only
