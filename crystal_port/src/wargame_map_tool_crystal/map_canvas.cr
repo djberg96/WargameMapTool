@@ -81,11 +81,8 @@ module WargameMapToolCrystal
         painter.antialiasing = true
         painter.fill_rect(event.rect, Qt6::Color.new(238, 232, 220))
         draw_map_frame(painter)
-        draw_background(painter)
-        draw_terrain(painter)
-        draw_paths(painter)
-        draw_assets(painter)
-        draw_labels(painter)
+        draw_layers(painter)
+        draw_grid_overlay(painter)
         draw_hover(painter)
         draw_hud(painter)
       end
@@ -110,35 +107,20 @@ module WargameMapToolCrystal
       painter.draw_rect(bounds)
     end
 
-    private def draw_background(painter : Qt6::QPainter) : Nil
-      return unless @state.layer_visible?("Background")
+    private def draw_layers(painter : Qt6::QPainter) : Nil
+      @state.layers.each do |layer|
+        next unless layer.visible
 
-      bounds = @state.screen_rect(@state.world_bounds)
-      painter.fill_rect(bounds, Qt6::Color.new(244, 238, 227))
-
-      band_height = bounds.height / 4.0
-      4.times do |index|
-        tint = index.even? ? Qt6::Color.new(231, 224, 209) : Qt6::Color.new(239, 233, 221)
-        painter.fill_rect(
-          Qt6::RectF.new(bounds.x, bounds.y + band_height * index, bounds.width, band_height),
-          tint
-        )
+        layer.paint(painter, @state)
       end
     end
 
-    private def draw_terrain(painter : Qt6::QPainter) : Nil
+    private def draw_grid_overlay(painter : Qt6::QPainter) : Nil
       grid_pen = Qt6::QPen.new(Qt6::Color.new(183, 175, 159), 1.0)
 
       @state.rows.times do |row|
         @state.cols.times do |col|
           center = @state.screen_point(@state.hex_center(col, row))
-
-          if @state.layer_visible?("Terrain")
-            radius = (6.0 * @state.zoom).clamp(3.2, 12.0)
-            painter.pen = Qt6::QPen.new(@state.terrain_color(col, row), 1.0)
-            painter.brush = @state.terrain_color(col, row)
-            painter.draw_ellipse(Qt6::RectF.new(center.x - radius, center.y - radius, radius * 2.0, radius * 2.0))
-          end
 
           next unless @state.show_grid
 
@@ -153,51 +135,6 @@ module WargameMapToolCrystal
           painter.pen = Qt6::Color.new(96, 92, 84)
           painter.draw_text(Qt6::PointF.new(center.x + 6.0, center.y - 7.0), @state.hex_label(col, row))
         end
-      end
-    end
-
-    private def draw_paths(painter : Qt6::QPainter) : Nil
-      return unless @state.layer_visible?("Paths")
-
-      painter.pen = Qt6::QPen.new(Qt6::Color.new(174, 82, 54), 3.0)
-      points = @state.route_hexes.map do |hex|
-        @state.screen_point(@state.hex_center(hex[0], hex[1]))
-      end
-
-      points.each_cons(2) do |segment|
-        painter.draw_line(segment[0], segment[1])
-      end
-
-      painter.brush = Qt6::Color.new(174, 82, 54)
-      points.each do |point|
-        painter.draw_ellipse(Qt6::RectF.new(point.x - 4.0, point.y - 4.0, 8.0, 8.0))
-      end
-    end
-
-    private def draw_assets(painter : Qt6::QPainter) : Nil
-      return unless @state.show_assets && @state.layer_visible?("Assets")
-
-      painter.pen = Qt6::QPen.new(Qt6::Color.new(76, 80, 90), 2.0)
-
-      @state.asset_hexes.each_with_index do |hex, index|
-        center = @state.screen_point(@state.hex_center(hex[0], hex[1]))
-        rect = Qt6::RectF.new(center.x - 14.0, center.y - 12.0, 28.0, 24.0)
-        fill = index.even? ? Qt6::Color.new(224, 214, 190) : Qt6::Color.new(198, 210, 216)
-        painter.fill_rect(rect, fill)
-        painter.draw_rect(rect)
-        painter.draw_text(Qt6::PointF.new(rect.x + 5.0, rect.y + 16.0), "#{index + 1}")
-      end
-    end
-
-    private def draw_labels(painter : Qt6::QPainter) : Nil
-      return unless @state.layer_visible?("Labels")
-
-      painter.pen = Qt6::Color.new(54, 60, 92)
-      painter.font = Qt6::QFont.new(point_size: 11, bold: true)
-
-      @state.label_hexes.each do |entry|
-        center = @state.screen_point(@state.hex_center(entry[1], entry[2]))
-        painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y - 10.0), entry[0])
       end
     end
 

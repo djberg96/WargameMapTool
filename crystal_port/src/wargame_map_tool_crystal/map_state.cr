@@ -1,18 +1,8 @@
 require "qt6"
+require "./layers"
 
 module WargameMapToolCrystal
   VERSION = "0.1.0"
-
-  class LayerInfo
-    property name : String
-    property kind : String
-    property visible : Bool
-    property accent : Qt6::Color
-    property opacity : Int32
-
-    def initialize(@name : String, @kind : String, @visible : Bool, @accent : Qt6::Color, @opacity : Int32 = 100)
-    end
-  end
 
   class MapState
     TOOL_NAMES = ["Background", "Fill", "Path", "Text", "Asset"] of String
@@ -29,7 +19,7 @@ module WargameMapToolCrystal
     property show_assets : Bool
     property project_path : String?
     property hover_hex : Tuple(Int32, Int32)?
-    getter layers : Array(LayerInfo)
+    getter layers : Array(MapLayer)
     getter cols : Int32
     getter rows : Int32
     getter hex_radius : Float64
@@ -50,13 +40,7 @@ module WargameMapToolCrystal
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
-      @layers = [
-        LayerInfo.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
-        LayerInfo.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
-        LayerInfo.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54)),
-        LayerInfo.new("Operational Labels", "Labels", true, Qt6::Color.new(66, 78, 118)),
-        LayerInfo.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
-      ] of LayerInfo
+      @layers = build_default_layers
     end
 
     def reset : Nil
@@ -75,13 +59,7 @@ module WargameMapToolCrystal
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
-      @layers = [
-        LayerInfo.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
-        LayerInfo.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
-        LayerInfo.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54)),
-        LayerInfo.new("Operational Labels", "Labels", true, Qt6::Color.new(66, 78, 118)),
-        LayerInfo.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
-      ] of LayerInfo
+      @layers = build_default_layers
     end
 
     def reset_view : Nil
@@ -90,7 +68,7 @@ module WargameMapToolCrystal
       @pan_y = 48.0
     end
 
-    def active_layer : LayerInfo
+    def active_layer : MapLayer
       @layers[@active_layer_index]
     end
 
@@ -105,6 +83,16 @@ module WargameMapToolCrystal
     def active_layer_visible=(value : Bool) : Bool
       active_layer.visible = value
       value
+    end
+
+    private def build_default_layers : Array(MapLayer)
+      [
+        BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
+        TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
+        PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54)),
+        LabelLayer.new("Operational Labels", "Labels", true, Qt6::Color.new(66, 78, 118)),
+        AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
+      ] of MapLayer
     end
 
     def world_bounds : Qt6::RectF
