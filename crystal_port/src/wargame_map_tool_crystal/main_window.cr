@@ -140,6 +140,7 @@ module WargameMapToolCrystal
 
     private def build_file_actions : Nil
       file_menu = @widget.menu_bar.add_menu("File")
+      edit_menu = @widget.menu_bar.add_menu("Edit")
       view_menu = @widget.menu_bar.add_menu("View")
       help_menu = @widget.menu_bar.add_menu("Help")
 
@@ -294,6 +295,53 @@ module WargameMapToolCrystal
         end
       end
 
+      edit_text_action = Qt6::Action.new("Edit Hovered Text…", @widget)
+      edit_text_action.on_triggered do
+        object = @state.hovered_text_object
+        unless object
+          handle_status("Hover a text label to edit it")
+          next
+        end
+
+        value = Qt6::InputDialog.get_text(@widget, title: "Edit Text Label", label: "Label text:", value: object.text)
+        if value
+          updated = value.strip
+          if updated.empty?
+            handle_status("Text label cannot be empty")
+          else
+            object.text = updated
+            refresh_all("Updated text label")
+          end
+        else
+          handle_status("Text edit canceled")
+        end
+      end
+
+      delete_text_action = Qt6::Action.new("Delete Hovered Text…", @widget)
+      delete_text_action.on_triggered do
+        object = @state.hovered_text_object
+        unless object
+          handle_status("Hover a text label to delete it")
+          next
+        end
+
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Text Label",
+          text: "Delete '#{object.text}'?",
+          informative_text: "This removes the hovered text label from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.text_layer) && layer.remove_text(object)
+          refresh_all("Deleted text label")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Text delete failed")
+        end
+      end
+
       quit_action = Qt6::Action.new("Quit", @widget)
       quit_action.shortcut = "Ctrl+Q"
       quit_action.on_triggered do
@@ -348,6 +396,10 @@ module WargameMapToolCrystal
       file_menu << export_action
       file_menu.add_separator
       file_menu << quit_action
+
+      edit_menu << add_text_action
+      edit_menu << edit_text_action
+      edit_menu << delete_text_action
 
       view_menu << reset_view_action
       view_menu << @grid_action

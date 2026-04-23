@@ -229,12 +229,38 @@ module WargameMapToolCrystal
       @objects << object
     end
 
+    def remove_text(object : TextObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
     def clear_texts : Nil
       @objects.clear
     end
 
     def text_count : Int32
       @objects.size.to_i32
+    end
+
+    def nearest_text(state : MapState, screen_point : Qt6::PointF, max_distance : Float64 = 28.0) : TextObject?
+      best = nil
+      best_distance = max_distance
+
+      @objects.each do |object|
+        anchor = state.screen_point(Qt6::PointF.new(object.x, object.y))
+        dx = anchor.x - screen_point.x
+        dy = anchor.y - screen_point.y
+        distance = Math.sqrt(dx * dx + dy * dy)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = object
+      end
+
+      best
     end
 
     def paint(painter : Qt6::QPainter, state : MapState) : Nil

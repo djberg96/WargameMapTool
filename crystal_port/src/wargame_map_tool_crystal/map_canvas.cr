@@ -89,12 +89,19 @@ module WargameMapToolCrystal
     end
 
     private def update_hover(position : Qt6::PointF) : Nil
+      @state.hover_screen = position
       @state.hover_hex = @state.pick_hex(position)
 
-      if hover = @state.hover_hex
-        @hover_callback.call("Hover: #{@state.hex_label(hover[0], hover[1])}")
+      base_message = if hover = @state.hover_hex
+                       "Hover: #{@state.hex_label(hover[0], hover[1])}"
+                     else
+                       "Hover: outside map"
+                     end
+
+      if object = @state.hovered_text_object
+        @hover_callback.call("#{base_message} | Text: #{object.text}")
       else
-        @hover_callback.call("Hover: outside map")
+        @hover_callback.call(base_message)
       end
 
       refresh

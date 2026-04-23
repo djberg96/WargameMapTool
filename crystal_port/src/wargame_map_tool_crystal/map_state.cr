@@ -21,6 +21,7 @@ module WargameMapToolCrystal
     property project_path : String?
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
+    property hover_screen : Qt6::PointF?
     getter layers : Array(MapLayer)
     getter cols : Int32
     getter rows : Int32
@@ -40,6 +41,7 @@ module WargameMapToolCrystal
       @project_path = nil
       @source_path = nil
       @hover_hex = nil
+      @hover_screen = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -60,6 +62,7 @@ module WargameMapToolCrystal
       @project_path = nil
       @source_path = nil
       @hover_hex = nil
+      @hover_screen = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -128,6 +131,14 @@ module WargameMapToolCrystal
 
       layer.add_text(TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true))
       true
+    end
+
+    def hovered_text_object : TextObject?
+      screen = @hover_screen
+      layer = text_layer
+      return nil unless screen && layer
+
+      layer.nearest_text(self, screen)
     end
 
     def save_slice(path : String) : Nil
