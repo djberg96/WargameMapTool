@@ -186,7 +186,7 @@ module WargameMapToolCrystal
       quit_action = Qt6::Action.new("Quit", @widget)
       quit_action.shortcut = "Ctrl+Q"
       quit_action.on_triggered do
-        Qt6.application.quit
+        @widget.close
       end
 
       reset_view_action = Qt6::Action.new("Reset View", @widget)

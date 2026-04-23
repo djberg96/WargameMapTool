@@ -7,6 +7,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - `crystal-qt6` can host a real `QMainWindow` editor shell with menu bar, toolbar, status bar, and dock widgets.
 - A custom `EventWidget` canvas can handle paint, mouse drag, wheel zoom, key input, and PNG export from Crystal.
 - A layer browser backed by Qt model/view classes is feasible for the editor-side workflow.
+- The slice exits cleanly on macOS through both File -> Quit and Command-Q when shutdown follows the window close path.
 - The port can live beside the Python codebase without disturbing the original application.
 
 ## What Is Ported Here
@@ -31,6 +32,8 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 
 The first direct gap uncovered during the port spike was maximized startup. The Python app starts maximized, and the Crystal wrapper did not yet expose that window-state helper. The local `crystal-qt6` checkout was updated to add `Widget#show_maximized`, and this slice now uses it.
 
+The first runtime shutdown issue showed up on macOS. Calling `Qt6.application.quit` directly from the File menu caused the app to hang during teardown, while routing quit through `@widget.close` exits cleanly. The port now uses the close path, and both the File menu action and Command-Q have been verified to shut the slice down cleanly. If `crystal-qt6` wants a reliable direct application-level quit on macOS, that path still needs follow-up in the binding layer.
+
 ## Next Pressure Points
 
 These are not all confirmed binding gaps yet, but they are the most likely places where `crystal-qt6` will need deeper work as the port expands:
@@ -38,4 +41,5 @@ These are not all confirmed binding gaps yet, but they are the most likely place
 - heavier `QPainter` parity for the real map layers and cache paths
 - richer project/document plumbing around project I/O and dialogs
 - broader verification around large model/view flows and editor-side data synchronization
+- application-level shutdown semantics on macOS if the binding should support direct `Application#quit` from menu actions
 - more downstream examples or specs that exercise a real multi-layer editor instead of isolated widgets
