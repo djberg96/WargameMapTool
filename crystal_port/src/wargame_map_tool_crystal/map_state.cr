@@ -85,6 +85,14 @@ module WargameMapToolCrystal
       value
     end
 
+    def background_layer : BackgroundLayer?
+      @layers.each do |layer|
+        return layer.as(BackgroundLayer) if layer.is_a?(BackgroundLayer)
+      end
+
+      nil
+    end
+
     private def build_default_layers : Array(MapLayer)
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),

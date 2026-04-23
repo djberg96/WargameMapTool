@@ -79,6 +79,7 @@ module WargameMapToolCrystal
     @active_layer_label : Qt6::Label
     @active_tool_label : Qt6::Label
     @project_label : Qt6::Label
+    @background_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
@@ -98,6 +99,7 @@ module WargameMapToolCrystal
       @active_layer_label = Qt6::Label.new
       @active_tool_label = Qt6::Label.new
       @project_label = Qt6::Label.new
+      @background_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
@@ -143,6 +145,11 @@ module WargameMapToolCrystal
       export_dialog.accept_mode = Qt6::FileDialogAcceptMode::Save
       export_dialog.file_mode = Qt6::FileDialogFileMode::AnyFile
 
+      background_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
+      background_dialog.window_title = "Import Background Image"
+      background_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
+      background_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
+
       new_action = Qt6::Action.new("New Port Slice", @widget)
       new_action.shortcut = "Ctrl+N"
       new_action.on_triggered do
@@ -180,6 +187,24 @@ module WargameMapToolCrystal
           end
         else
           handle_status("Export canceled")
+        end
+      end
+
+      import_background_action = Qt6::Action.new("Import Background Image…", @widget)
+      import_background_action.shortcut = "Ctrl+Shift+B"
+      import_background_action.on_triggered do
+        if background_dialog.exec == Qt6::DialogCode::Accepted
+          selected = background_dialog.selected_file
+          layer = @state.background_layer
+
+          if !selected.empty? && layer && layer.load_image(selected)
+            refresh_inspector
+            @canvas.refresh("Loaded background #{File.basename(selected)}")
+          else
+            handle_status(selected.empty? ? "Background import canceled" : "Background import failed")
+          end
+        else
+          handle_status("Background import canceled")
         end
       end
 
@@ -230,6 +255,7 @@ module WargameMapToolCrystal
 
       file_menu << new_action
       file_menu << open_action
+      file_menu << import_background_action
       file_menu << export_action
       file_menu.add_separator
       file_menu << quit_action
@@ -313,6 +339,7 @@ module WargameMapToolCrystal
       panel.vbox do |column|
         column << Qt6::Label.new("Crystal Port Inspector")
         column << @project_label
+        column << @background_label
         column << @active_tool_label
         column << @active_layer_label
         column << @hover_label
@@ -352,6 +379,15 @@ module WargameMapToolCrystal
                             else
                               "Source: unsaved Crystal prototype"
                             end
+      @background_label.text = if layer = @state.background_layer
+                                 if path = layer.image_path
+                                   "Background: #{File.basename(path)} (#{layer.image_size_text})"
+                                 else
+                                   "Background: #{layer.image_size_text}"
+                                 end
+                               else
+                                 "Background: unavailable"
+                               end
       @active_tool_label.text = "Active tool: #{@state.active_tool}"
       @active_layer_label.text = "Active layer: #{@state.active_layer.name}"
       @hover_label.text = if hover = @state.hover_hex

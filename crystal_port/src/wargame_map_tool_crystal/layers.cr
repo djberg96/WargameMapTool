@@ -15,7 +15,52 @@ module WargameMapToolCrystal
   end
 
   class BackgroundLayer < MapLayer
+    @image : Qt6::QImage?
+
+    getter image_path : String?
+    property offset_x : Float64
+    property offset_y : Float64
+    property scale : Float64
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @image_path = nil
+      @offset_x = 0.0
+      @offset_y = 0.0
+      @scale = 1.0
+      @image = nil
+    end
+
+    def load_image(path : String) : Bool
+      image = Qt6::QImage.from_file(path)
+      return false if image.null?
+
+      @image = image.convert_to_format(Qt6::ImageFormat::ARGB32)
+      @image_path = path
+      true
+    end
+
+    def clear_image : Nil
+      @image = nil
+      @image_path = nil
+    end
+
+    def has_image? : Bool
+      image = @image
+      !image.nil? && !image.null?
+    end
+
+    def image_size_text : String
+      image = @image
+      return "wash only" unless image && !image.null?
+
+      "#{image.width}x#{image.height} px"
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      painter.save
+      painter.opacity = opacity / 100.0
+
       bounds = state.screen_rect(state.world_bounds)
       painter.fill_rect(bounds, Qt6::Color.new(244, 238, 227))
 
@@ -27,6 +72,15 @@ module WargameMapToolCrystal
           tint
         )
       end
+
+      image = @image
+      if image && !image.null?
+        painter.smooth_pixmap_transform = true
+        target = state.screen_rect(Qt6::RectF.new(@offset_x, @offset_y, image.width * @scale, image.height * @scale))
+        painter.draw_image(target, image)
+      end
+
+      painter.restore
     end
   end
 
