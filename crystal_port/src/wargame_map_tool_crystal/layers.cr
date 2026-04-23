@@ -116,14 +116,131 @@ module WargameMapToolCrystal
     end
   end
 
-  class LabelLayer < MapLayer
-    def paint(painter : Qt6::QPainter, state : MapState) : Nil
-      painter.pen = Qt6::Color.new(54, 60, 92)
-      painter.font = Qt6::QFont.new(point_size: 11, bold: true)
+  class TextObject
+    property text : String
+    property x : Float64
+    property y : Float64
+    property font_family : String
+    property font_size : Int32
+    property bold : Bool
+    property italic : Bool
+    property color : Qt6::Color
+    property alignment : String
+    property opacity : Float64
+    property rotation : Float64
 
-      state.label_hexes.each do |entry|
-        center = state.screen_point(state.hex_center(entry[1], entry[2]))
-        painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y - 10.0), entry[0])
+    def initialize(
+      @text : String,
+      @x : Float64,
+      @y : Float64,
+      @font_family : String = "Avenir Next",
+      @font_size : Int32 = 12,
+      @bold : Bool = false,
+      @italic : Bool = false,
+      @color : Qt6::Color = Qt6::Color.new(54, 60, 92),
+      @alignment : String = "left",
+      @opacity : Float64 = 1.0,
+      @rotation : Float64 = 0.0,
+    )
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0) : Nil
+      return if @text.empty?
+
+      font = Qt6::QFont.new(@font_family, @font_size, @bold, @italic)
+      metrics = font.metrics_f
+      x_offset = case @alignment
+                 when "center"
+                   -metrics.horizontal_advance(@text) / 2.0
+                 when "right"
+                   -metrics.horizontal_advance(@text)
+                 else
+                   0.0
+                 end
+      screen = state.screen_point(Qt6::PointF.new(@x, @y))
+
+      painter.save
+      painter.font = font
+      painter.pen = @color
+      painter.opacity = (layer_opacity * @opacity).clamp(0.0, 1.0)
+      painter.translate(screen.x, screen.y)
+      painter.rotate(@rotation) if @rotation != 0.0
+      painter.draw_text(Qt6::PointF.new(x_offset, 0.0), @text)
+      painter.restore
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "text", @text
+        json.field "x", @x
+        json.field "y", @y
+        json.field "font_family", @font_family
+        json.field "font_size", @font_size
+        json.field "bold", @bold
+        json.field "italic", @italic
+        json.field "alignment", @alignment
+        json.field "opacity", @opacity
+        json.field "rotation", @rotation
+        json.field "color" do
+          json.object do
+            json.field "red", @color.red
+            json.field "green", @color.green
+            json.field "blue", @color.blue
+            json.field "alpha", @color.alpha
+          end
+        end
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      color_data = data["color"]?
+      color = Qt6::Color.new(
+        (color_data.try { |value| value["red"]?.try(&.as_i?) } || 54).to_i32,
+        (color_data.try { |value| value["green"]?.try(&.as_i?) } || 60).to_i32,
+        (color_data.try { |value| value["blue"]?.try(&.as_i?) } || 92).to_i32,
+        (color_data.try { |value| value["alpha"]?.try(&.as_i?) } || 255).to_i32,
+      )
+
+      new(
+        data["text"]?.try(&.as_s?) || "Text",
+        data["x"]?.try(&.as_f?) || 0.0,
+        data["y"]?.try(&.as_f?) || 0.0,
+        data["font_family"]?.try(&.as_s?) || "Avenir Next",
+        (data["font_size"]?.try(&.as_i?) || 12).to_i32,
+        data["bold"]?.try(&.as_bool?) || false,
+        data["italic"]?.try(&.as_bool?) || false,
+        color,
+        data["alignment"]?.try(&.as_s?) || "left",
+        data["opacity"]?.try(&.as_f?) || 1.0,
+        data["rotation"]?.try(&.as_f?) || 0.0,
+      )
+    end
+  end
+
+  class TextLayer < MapLayer
+    getter objects : Array(TextObject)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of TextObject
+    end
+
+    def add_text(object : TextObject) : Nil
+      @objects << object
+    end
+
+    def clear_texts : Nil
+      @objects.clear
+    end
+
+    def text_count : Int32
+      @objects.size.to_i32
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      layer_opacity = opacity / 100.0
+      @objects.each do |object|
+        object.paint(painter, state, layer_opacity)
       end
     end
   end

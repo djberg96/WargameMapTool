@@ -273,6 +273,27 @@ module WargameMapToolCrystal
         end
       end
 
+      add_text_action = Qt6::Action.new("Add Text Label…", @widget)
+      add_text_action.shortcut = "Ctrl+Shift+T"
+      add_text_action.on_triggered do
+        suggested = if hover = @state.hover_hex
+                      @state.hex_label(hover[0], hover[1])
+                    else
+                      "New label"
+                    end
+        value = Qt6::InputDialog.get_text(@widget, title: "Add Text Label", label: "Label text:", value: suggested)
+
+        if value && @state.add_text_label(value)
+          if index = @state.text_layer_index
+            @state.set_active_layer(index)
+            @layer_tree.current_index = @layer_model.index(index, 0)
+          end
+          refresh_all("Added text label")
+        else
+          handle_status(value.nil? ? "Text add canceled" : "Text add failed")
+        end
+      end
+
       quit_action = Qt6::Action.new("Quit", @widget)
       quit_action.shortcut = "Ctrl+Q"
       quit_action.on_triggered do
@@ -322,6 +343,7 @@ module WargameMapToolCrystal
       file_menu << open_slice_action
       file_menu << open_action
       file_menu << import_background_action
+      file_menu << add_text_action
       file_menu << save_slice_action
       file_menu << export_action
       file_menu.add_separator

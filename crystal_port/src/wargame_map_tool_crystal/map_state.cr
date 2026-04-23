@@ -97,6 +97,39 @@ module WargameMapToolCrystal
       nil
     end
 
+    def text_layer : TextLayer?
+      @layers.each do |layer|
+        return layer.as(TextLayer) if layer.is_a?(TextLayer)
+      end
+
+      nil
+    end
+
+    def text_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(TextLayer)
+      end
+
+      nil
+    end
+
+    def add_text_label(text : String) : Bool
+      clean_text = text.strip
+      return false if clean_text.empty?
+
+      layer = text_layer
+      return false unless layer
+
+      anchor = if hover = @hover_hex
+                 hex_center(hover[0], hover[1])
+               else
+                 Qt6::PointF.new(world_bounds.x + world_bounds.width / 2.0, world_bounds.y + world_bounds.height / 2.0)
+               end
+
+      layer.add_text(TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true))
+      true
+    end
+
     def save_slice(path : String) : Nil
       File.write(path, JSON.build do |json|
         json.object do
@@ -117,6 +150,19 @@ module WargameMapToolCrystal
               json.null
             end
           end
+
+          json.field "text_objects" do
+            if layer = text_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
         end
       end)
 
@@ -131,34 +177,52 @@ module WargameMapToolCrystal
       @source_path = data["source_path"]?.try(&.as_s?)
 
       background_data = data["background"]?
-      layer = background_layer
-      return true unless background_data && layer
+      if background_data && (layer = background_layer)
+        if image_path = background_data["image_path"]?.try(&.as_s?)
+          resolved_path = resolve_slice_path(path, image_path)
+          return false unless layer.load_image(resolved_path)
+        else
+          layer.clear_image
+        end
 
-      if image_path = background_data["image_path"]?.try(&.as_s?)
-        resolved_path = resolve_slice_path(path, image_path)
-        return false unless layer.load_image(resolved_path)
-      else
-        layer.clear_image
+        layer.offset_x = background_data["offset_x"]?.try(&.as_f?) || 0.0
+        layer.offset_y = background_data["offset_y"]?.try(&.as_f?) || 0.0
+        layer.scale = background_data["scale"]?.try(&.as_f?) || 1.0
+        layer.visible = background_data["visible"]?.try(&.as_bool?) || true
+        layer.opacity = background_data["opacity"]?.try(&.as_i?) || 100
       end
 
-      layer.offset_x = background_data["offset_x"]?.try(&.as_f?) || 0.0
-      layer.offset_y = background_data["offset_y"]?.try(&.as_f?) || 0.0
-      layer.scale = background_data["scale"]?.try(&.as_f?) || 1.0
-      layer.visible = background_data["visible"]?.try(&.as_bool?) || true
-      layer.opacity = background_data["opacity"]?.try(&.as_i?) || 100
+      text_layer.try(&.clear_texts)
+      data["text_objects"]?.try(&.as_a?).try do |objects|
+        if layer = text_layer
+          objects.each do |object_data|
+            layer.add_text(TextObject.from_json(object_data))
+          end
+        end
+      end
+
       true
     rescue
       false
     end
 
     private def build_default_layers : Array(MapLayer)
+      text_layer = TextLayer.new("Operational Labels", "Text", true, Qt6::Color.new(66, 78, 118))
+      seed_default_text_objects(text_layer)
+
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
         TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
         PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54)),
-        LabelLayer.new("Operational Labels", "Labels", true, Qt6::Color.new(66, 78, 118)),
+        text_layer,
         AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
       ] of MapLayer
+    end
+
+    private def seed_default_text_objects(layer : TextLayer) : Nil
+      layer.add_text(TextObject.new("Hill 204", hex_center(4, 3).x + 10.0, hex_center(4, 3).y - 10.0, color: layer.accent, bold: true))
+      layer.add_text(TextObject.new("Bridge", hex_center(10, 7).x + 10.0, hex_center(10, 7).y - 10.0, color: layer.accent, bold: true))
+      layer.add_text(TextObject.new("Depot", hex_center(14, 9).x + 10.0, hex_center(14, 9).y - 10.0, color: layer.accent, bold: true))
     end
 
     private def resolve_slice_path(slice_path : String, image_path : String) : String
@@ -281,14 +345,6 @@ module WargameMapToolCrystal
 
     def asset_hexes : Array(Tuple(Int32, Int32))
       [{3, 2}, {8, 6}, {12, 4}, {15, 9}] of Tuple(Int32, Int32)
-    end
-
-    def label_hexes : Array(Tuple(String, Int32, Int32))
-      [
-        {"Hill 204", 4, 3},
-        {"Bridge", 10, 7},
-        {"Depot", 14, 9},
-      ] of Tuple(String, Int32, Int32)
     end
   end
 end
