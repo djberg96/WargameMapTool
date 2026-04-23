@@ -17,6 +17,8 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - layer dock with selection sync
 - inspector dock
 - importable background image layer with offset/scale-backed rendering
+- inspector controls for background offset and scale
+- Crystal slice JSON save/load for background image state and transform
 - custom map canvas with pan/zoom, hover, labels, route overlay, and counter overlay
 - renderable Crystal layer seam with a real layer list feeding the canvas paint loop
 - source-map selection stub and PNG export
@@ -27,7 +29,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - the actual command stack and undo/redo command translations
 - the real data-backed layer implementations from the Python app
 - asset libraries, texture libraries, palette editors, and manager dialogs
-- background-layer editing parity beyond basic image import and rendering
+- background-layer editing parity beyond basic image import, transform, and slice-state persistence
 - the advanced paint, fill, path, border, hexside, and text editing tool behaviors
 - SVG/PDF export parity with the Python app
 

@@ -1,3 +1,4 @@
+require "json"
 require "qt6"
 require "./layers"
 
@@ -18,6 +19,7 @@ module WargameMapToolCrystal
     property show_coordinates : Bool
     property show_assets : Bool
     property project_path : String?
+    property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
     getter layers : Array(MapLayer)
     getter cols : Int32
@@ -36,6 +38,7 @@ module WargameMapToolCrystal
       @show_coordinates = true
       @show_assets = true
       @project_path = nil
+      @source_path = nil
       @hover_hex = nil
       @cols = 18
       @rows = 14
@@ -55,6 +58,7 @@ module WargameMapToolCrystal
       @show_coordinates = true
       @show_assets = true
       @project_path = nil
+      @source_path = nil
       @hover_hex = nil
       @cols = 18
       @rows = 14
@@ -93,6 +97,60 @@ module WargameMapToolCrystal
       nil
     end
 
+    def save_slice(path : String) : Nil
+      File.write(path, JSON.build do |json|
+        json.object do
+          json.field "version", 1
+          json.field "source_path", @source_path if @source_path
+
+          json.field "background" do
+            if layer = background_layer
+              json.object do
+                json.field "image_path", layer.image_path if layer.image_path
+                json.field "offset_x", layer.offset_x
+                json.field "offset_y", layer.offset_y
+                json.field "scale", layer.scale
+                json.field "visible", layer.visible
+                json.field "opacity", layer.opacity
+              end
+            else
+              json.null
+            end
+          end
+        end
+      end)
+
+      @project_path = path
+    end
+
+    def load_slice(path : String) : Bool
+      data = JSON.parse(File.read(path))
+
+      reset
+      @project_path = path
+      @source_path = data["source_path"]?.try(&.as_s?)
+
+      background_data = data["background"]?
+      layer = background_layer
+      return true unless background_data && layer
+
+      if image_path = background_data["image_path"]?.try(&.as_s?)
+        resolved_path = resolve_slice_path(path, image_path)
+        return false unless layer.load_image(resolved_path)
+      else
+        layer.clear_image
+      end
+
+      layer.offset_x = background_data["offset_x"]?.try(&.as_f?) || 0.0
+      layer.offset_y = background_data["offset_y"]?.try(&.as_f?) || 0.0
+      layer.scale = background_data["scale"]?.try(&.as_f?) || 1.0
+      layer.visible = background_data["visible"]?.try(&.as_bool?) || true
+      layer.opacity = background_data["opacity"]?.try(&.as_i?) || 100
+      true
+    rescue
+      false
+    end
+
     private def build_default_layers : Array(MapLayer)
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
@@ -101,6 +159,12 @@ module WargameMapToolCrystal
         LabelLayer.new("Operational Labels", "Labels", true, Qt6::Color.new(66, 78, 118)),
         AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
       ] of MapLayer
+    end
+
+    private def resolve_slice_path(slice_path : String, image_path : String) : String
+      return image_path if Path[image_path].absolute?
+
+      File.expand_path(image_path, File.dirname(slice_path))
     end
 
     def world_bounds : Qt6::RectF

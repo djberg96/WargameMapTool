@@ -79,10 +79,14 @@ module WargameMapToolCrystal
     @active_layer_label : Qt6::Label
     @active_tool_label : Qt6::Label
     @project_label : Qt6::Label
+    @source_label : Qt6::Label
     @background_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @background_offset_x_spin : Qt6::DoubleSpinBox
+    @background_offset_y_spin : Qt6::DoubleSpinBox
+    @background_scale_spin : Qt6::DoubleSpinBox
     @updating_panel : Bool
 
     def initialize
@@ -99,10 +103,14 @@ module WargameMapToolCrystal
       @active_layer_label = Qt6::Label.new
       @active_tool_label = Qt6::Label.new
       @project_label = Qt6::Label.new
+      @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @background_offset_x_spin = Qt6::DoubleSpinBox.new
+      @background_offset_y_spin = Qt6::DoubleSpinBox.new
+      @background_scale_spin = Qt6::DoubleSpinBox.new
       @updating_panel = false
 
       @status_bar = @widget.status_bar
@@ -145,6 +153,16 @@ module WargameMapToolCrystal
       export_dialog.accept_mode = Qt6::FileDialogAcceptMode::Save
       export_dialog.file_mode = Qt6::FileDialogFileMode::AnyFile
 
+      slice_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Crystal Slice (*.wmtc.json *.json);;All Files (*)")
+      slice_dialog.window_title = "Open Crystal Port Slice"
+      slice_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
+      slice_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
+
+      save_slice_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Crystal Slice (*.wmtc.json *.json);;All Files (*)")
+      save_slice_dialog.window_title = "Save Crystal Port Slice"
+      save_slice_dialog.accept_mode = Qt6::FileDialogAcceptMode::Save
+      save_slice_dialog.file_mode = Qt6::FileDialogFileMode::AnyFile
+
       background_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
       background_dialog.window_title = "Import Background Image"
       background_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
@@ -162,9 +180,25 @@ module WargameMapToolCrystal
       open_action.on_triggered do
         if open_dialog.exec == Qt6::DialogCode::Accepted
           selected = open_dialog.selected_file
-          @state.project_path = selected.empty? ? nil : selected
+          @state.source_path = selected.empty? ? nil : selected
           refresh_inspector
           handle_status(selected.empty? ? "Open canceled" : "Selected #{File.basename(selected)} for future import work")
+        else
+          handle_status("Open canceled")
+        end
+      end
+
+      open_slice_action = Qt6::Action.new("Open Crystal Slice…", @widget)
+      open_slice_action.shortcut = "Ctrl+Shift+O"
+      open_slice_action.on_triggered do
+        if slice_dialog.exec == Qt6::DialogCode::Accepted
+          selected = slice_dialog.selected_file
+
+          if !selected.empty? && @state.load_slice(selected)
+            refresh_all("Opened #{File.basename(selected)}")
+          else
+            handle_status(selected.empty? ? "Open canceled" : "Crystal slice open failed")
+          end
         else
           handle_status("Open canceled")
         end
@@ -173,7 +207,13 @@ module WargameMapToolCrystal
       export_action = Qt6::Action.new("Export PNG…", @widget)
       export_action.shortcut = "Ctrl+Shift+E"
       export_action.on_triggered do
-        suggested = @state.project_path ? File.join(File.dirname(@state.project_path.not_nil!), "wargame-map-tool-crystal-preview.png") : File.join(Dir.current, "wargame-map-tool-crystal-preview.png")
+        suggested = if @state.project_path
+                      File.join(File.dirname(@state.project_path.not_nil!), "wargame-map-tool-crystal-preview.png")
+                    elsif @state.source_path
+                      File.join(File.dirname(@state.source_path.not_nil!), "wargame-map-tool-crystal-preview.png")
+                    else
+                      File.join(Dir.current, "wargame-map-tool-crystal-preview.png")
+                    end
         export_dialog.select_file(suggested)
 
         if export_dialog.exec == Qt6::DialogCode::Accepted
@@ -187,6 +227,31 @@ module WargameMapToolCrystal
           end
         else
           handle_status("Export canceled")
+        end
+      end
+
+      save_slice_action = Qt6::Action.new("Save Crystal Slice…", @widget)
+      save_slice_action.shortcut = "Ctrl+Shift+S"
+      save_slice_action.on_triggered do
+        suggested = @state.project_path || File.join(Dir.current, "wargame-map-tool-slice.wmtc.json")
+        save_slice_dialog.select_file(suggested)
+
+        if save_slice_dialog.exec == Qt6::DialogCode::Accepted
+          output = save_slice_dialog.selected_file
+          if output.empty?
+            handle_status("Save canceled")
+          else
+            output = "#{output}.wmtc.json" unless output.downcase.ends_with?(".json")
+            begin
+              @state.save_slice(output)
+              refresh_inspector
+              handle_status("Saved #{File.basename(output)}")
+            rescue
+              handle_status("Crystal slice save failed")
+            end
+          end
+        else
+          handle_status("Save canceled")
         end
       end
 
@@ -254,8 +319,10 @@ module WargameMapToolCrystal
       end
 
       file_menu << new_action
+      file_menu << open_slice_action
       file_menu << open_action
       file_menu << import_background_action
+      file_menu << save_slice_action
       file_menu << export_action
       file_menu.add_separator
       file_menu << quit_action
@@ -333,13 +400,61 @@ module WargameMapToolCrystal
         @canvas.refresh(checked ? "Layer enabled" : "Layer hidden")
       end
 
+      @background_offset_x_spin.set_range(-5000.0, 5000.0)
+      @background_offset_x_spin.decimals = 1
+      @background_offset_x_spin.single_step = 10.0
+      @background_offset_x_spin.suffix = " px"
+      @background_offset_x_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.background_layer
+
+        layer.offset_x = value
+        @canvas.refresh("Background X #{value.round(1)}")
+      end
+
+      @background_offset_y_spin.set_range(-5000.0, 5000.0)
+      @background_offset_y_spin.decimals = 1
+      @background_offset_y_spin.single_step = 10.0
+      @background_offset_y_spin.suffix = " px"
+      @background_offset_y_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.background_layer
+
+        layer.offset_y = value
+        @canvas.refresh("Background Y #{value.round(1)}")
+      end
+
+      @background_scale_spin.set_range(0.05, 20.0)
+      @background_scale_spin.decimals = 2
+      @background_scale_spin.single_step = 0.05
+      @background_scale_spin.suffix = "x"
+      @background_scale_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.background_layer
+
+        layer.scale = value
+        @canvas.refresh("Background scale #{value.round(2)}x")
+      end
+
       summary = Qt6::Label.new("Scope: shell, toolbar, layers, pan/zoom canvas, and PNG export. Remaining Python dialogs and full project serialization are still ahead.")
+      background_controls = Qt6::Widget.new
+      background_controls.vbox do |column|
+        column << Qt6::Label.new("Background Transform")
+        column << Qt6::Label.new("Offset X")
+        column << @background_offset_x_spin
+        column << Qt6::Label.new("Offset Y")
+        column << @background_offset_y_spin
+        column << Qt6::Label.new("Scale")
+        column << @background_scale_spin
+      end
 
       panel = Qt6::Widget.new
       panel.vbox do |column|
         column << Qt6::Label.new("Crystal Port Inspector")
         column << @project_label
+        column << @source_label
         column << @background_label
+        column << background_controls
         column << @active_tool_label
         column << @active_layer_label
         column << @hover_label
@@ -375,10 +490,15 @@ module WargameMapToolCrystal
     private def refresh_inspector : Nil
       @updating_panel = true
       @project_label.text = if path = @state.project_path
-                              "Source: #{File.basename(path)}"
+                              "Slice: #{File.basename(path)}"
                             else
-                              "Source: unsaved Crystal prototype"
+                              "Slice: unsaved Crystal prototype"
                             end
+      @source_label.text = if path = @state.source_path
+                             "Source map: #{File.basename(path)}"
+                           else
+                             "Source map: none selected"
+                           end
       @background_label.text = if layer = @state.background_layer
                                  if path = layer.image_path
                                    "Background: #{File.basename(path)} (#{layer.image_size_text})"
@@ -388,6 +508,11 @@ module WargameMapToolCrystal
                                else
                                  "Background: unavailable"
                                end
+      if layer = @state.background_layer
+        @background_offset_x_spin.value = layer.offset_x
+        @background_offset_y_spin.value = layer.offset_y
+        @background_scale_spin.value = layer.scale
+      end
       @active_tool_label.text = "Active tool: #{@state.active_tool}"
       @active_layer_label.text = "Active layer: #{@state.active_layer.name}"
       @hover_label.text = if hover = @state.hover_hex
