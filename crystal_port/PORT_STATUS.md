@@ -20,7 +20,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - inspector controls for background offset and scale
 - Crystal slice JSON save/load for background image state and transform
 - minimal terrain fill workflow with per-hex color overrides, translucent hover preview, left-drag paint, right-drag clear, adjustable fill radius, a global clear-all action, inspector fill color control plus preset swatches, and Crystal slice JSON persistence for both fills and brush radius
-- object-backed border layer with edge hover feedback, click-to-place/select interaction, right-click and Delete removal, inspector-based width/color/line-style editing, and Crystal slice JSON persistence
+- object-backed border layer with edge hover feedback, click-to-place/select interaction, right-click/Delete/Edit-menu removal, inspector-based width/color/line-style editing, and Crystal slice JSON persistence
 - object-backed path layer with explicit Path-tool selection, neighboring-hex-constrained two-click path creation, preview feedback, neighboring-hex-constrained endpoint hover/drag reshaping feedback, keyboard delete/cancel support, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
 - explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/reset/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility

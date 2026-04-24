@@ -480,6 +480,33 @@ module WargameMapToolCrystal
         end
       end
 
+      delete_border_action = Qt6::Action.new("Delete Selected Border…", @widget)
+      delete_border_action.on_triggered do
+        object = @state.selected_border_object if @state.selected_border_present?
+        unless object
+          handle_status("Select a border to delete it")
+          next
+        end
+
+        label = "#{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Border",
+          text: "Delete border #{label}?",
+          informative_text: "This removes the selected border segment from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.border_layer) && layer.remove_border(object)
+          @state.clear_border_selection
+          refresh_all("Deleted border #{label}")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Border delete failed")
+        end
+      end
+
       clear_fills_action = Qt6::Action.new("Clear All Fills…", @widget)
       clear_fills_action.on_triggered do
         layer = @state.terrain_layer
@@ -660,6 +687,7 @@ module WargameMapToolCrystal
       edit_menu << delete_text_action
       edit_menu << duplicate_path_action
       edit_menu << delete_path_action
+      edit_menu << delete_border_action
       edit_menu << clear_fills_action
       edit_menu << duplicate_asset_action
       edit_menu << reset_asset_transform_action
