@@ -26,6 +26,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - visible dashed selection highlight around the currently selected text object
 - drag-to-move for the selected text object while the Text tool is active
 - inspector-based selected-text property editing for content, font size, bold, and italic
+- inspector-based selected-text alignment, color, opacity, and rotation editing
 - custom map canvas with pan/zoom, hover, labels, route overlay, and counter overlay
 - renderable Crystal layer seam with a real layer list feeding the canvas paint loop
 - source-map selection stub and PNG export
@@ -37,7 +38,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - the real data-backed layer implementations from the Python app
 - asset libraries, texture libraries, palette editors, and manager dialogs
 - background-layer editing parity beyond basic image import, transform, and slice-state persistence
-- text-layer editing parity beyond basic selection, move, inspector editing, add/edit/delete, and slice-state persistence
+- text-layer editing parity beyond basic selection, move, inspector editing of core object properties, add/edit/delete, and slice-state persistence
 - the advanced paint, fill, path, border, hexside, and text editing tool behaviors
 - SVG/PDF export parity with the Python app
 

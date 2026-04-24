@@ -88,6 +88,10 @@ module WargameMapToolCrystal
     @text_font_size_spin : Qt6::SpinBox
     @text_bold_check : Qt6::CheckBox
     @text_italic_check : Qt6::CheckBox
+    @text_alignment_combo : Qt6::ComboBox
+    @text_color_button : Qt6::PushButton
+    @text_opacity_spin : Qt6::DoubleSpinBox
+    @text_rotation_spin : Qt6::DoubleSpinBox
     @background_offset_x_spin : Qt6::DoubleSpinBox
     @background_offset_y_spin : Qt6::DoubleSpinBox
     @background_scale_spin : Qt6::DoubleSpinBox
@@ -116,6 +120,10 @@ module WargameMapToolCrystal
       @text_font_size_spin = Qt6::SpinBox.new
       @text_bold_check = Qt6::CheckBox.new("Bold")
       @text_italic_check = Qt6::CheckBox.new("Italic")
+      @text_alignment_combo = Qt6::ComboBox.new
+      @text_color_button = Qt6::PushButton.new("Text Color")
+      @text_opacity_spin = Qt6::DoubleSpinBox.new
+      @text_rotation_spin = Qt6::DoubleSpinBox.new
       @background_offset_x_spin = Qt6::DoubleSpinBox.new
       @background_offset_y_spin = Qt6::DoubleSpinBox.new
       @background_scale_spin = Qt6::DoubleSpinBox.new
@@ -555,6 +563,59 @@ module WargameMapToolCrystal
         @canvas.refresh(checked ? "Italic enabled" : "Italic disabled")
       end
 
+      @text_alignment_combo << "Left"
+      @text_alignment_combo << "Center"
+      @text_alignment_combo << "Right"
+      @text_alignment_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.alignment = case index
+                           when 1
+                             "center"
+                           when 2
+                             "right"
+                           else
+                             "left"
+                           end
+        @canvas.refresh("Updated text alignment")
+      end
+
+      @text_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.color, title: "Select Text Color")
+        next unless color
+
+        object.color = color
+        @text_color_button.text = color_button_text(color)
+        @canvas.refresh("Updated text color")
+      end
+
+      @text_opacity_spin.set_range(0.0, 1.0)
+      @text_opacity_spin.decimals = 2
+      @text_opacity_spin.single_step = 0.05
+      @text_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.opacity = value
+        @canvas.refresh("Updated text opacity")
+      end
+
+      @text_rotation_spin.set_range(-180.0, 180.0)
+      @text_rotation_spin.decimals = 1
+      @text_rotation_spin.single_step = 5.0
+      @text_rotation_spin.suffix = " deg"
+      @text_rotation_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.rotation = value
+        @canvas.refresh("Updated text rotation")
+      end
+
       summary = Qt6::Label.new("Scope: shell, toolbar, layers, pan/zoom canvas, and PNG export. Remaining Python dialogs and full project serialization are still ahead.")
       background_controls = Qt6::Widget.new
       background_controls.vbox do |column|
@@ -573,6 +634,13 @@ module WargameMapToolCrystal
         column << @text_value_edit
         column << Qt6::Label.new("Font Size")
         column << @text_font_size_spin
+        column << Qt6::Label.new("Alignment")
+        column << @text_alignment_combo
+        column << @text_color_button
+        column << Qt6::Label.new("Opacity")
+        column << @text_opacity_spin
+        column << Qt6::Label.new("Rotation")
+        column << @text_rotation_spin
         column << @text_bold_check
         column << @text_italic_check
       end
@@ -646,13 +714,44 @@ module WargameMapToolCrystal
       if object = (@state.selected_text_object if @state.selected_text_present?)
         @text_value_edit.text = object.text
         @text_font_size_spin.value = object.font_size
+        @text_alignment_combo.current_index = case object.alignment
+                                              when "center"
+                                                1
+                                              when "right"
+                                                2
+                                              else
+                                                0
+                                              end
+        @text_color_button.text = color_button_text(object.color)
+        @text_opacity_spin.value = object.opacity
+        @text_rotation_spin.value = object.rotation
         @text_bold_check.checked = object.bold
         @text_italic_check.checked = object.italic
+        @text_value_edit.enabled = true
+        @text_font_size_spin.enabled = true
+        @text_alignment_combo.enabled = true
+        @text_color_button.enabled = true
+        @text_opacity_spin.enabled = true
+        @text_rotation_spin.enabled = true
+        @text_bold_check.enabled = true
+        @text_italic_check.enabled = true
       else
         @text_value_edit.text = ""
         @text_font_size_spin.value = 12
+        @text_alignment_combo.current_index = 0
+        @text_color_button.text = "Text Color"
+        @text_opacity_spin.value = 1.0
+        @text_rotation_spin.value = 0.0
         @text_bold_check.checked = false
         @text_italic_check.checked = false
+        @text_value_edit.enabled = false
+        @text_font_size_spin.enabled = false
+        @text_alignment_combo.enabled = false
+        @text_color_button.enabled = false
+        @text_opacity_spin.enabled = false
+        @text_rotation_spin.enabled = false
+        @text_bold_check.enabled = false
+        @text_italic_check.enabled = false
       end
       @active_tool_label.text = "Active tool: #{@state.active_tool}"
       @active_layer_label.text = "Active layer: #{@state.active_layer.name}"
@@ -673,6 +772,10 @@ module WargameMapToolCrystal
     private def handle_status(message : String) : Nil
       @status_bar.show_message(message, 1800)
       refresh_inspector
+    end
+
+    private def color_button_text(color : Qt6::Color) : String
+      "Text Color (#{color.red}, #{color.green}, #{color.blue})"
     end
 
     private def apply_icon : Nil
