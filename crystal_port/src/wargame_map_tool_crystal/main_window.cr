@@ -86,12 +86,16 @@ module WargameMapToolCrystal
     @source_label : Qt6::Label
     @background_label : Qt6::Label
     @terrain_fill_label : Qt6::Label
+    @border_label : Qt6::Label
     @path_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @border_width_spin : Qt6::DoubleSpinBox
+    @border_line_type_combo : Qt6::ComboBox
+    @border_color_button : Qt6::PushButton
     @path_width_spin : Qt6::DoubleSpinBox
     @path_line_type_combo : Qt6::ComboBox
     @path_color_button : Qt6::PushButton
@@ -137,12 +141,16 @@ module WargameMapToolCrystal
       @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
       @terrain_fill_label = Qt6::Label.new
+      @border_label = Qt6::Label.new
       @path_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @border_width_spin = Qt6::DoubleSpinBox.new
+      @border_line_type_combo = Qt6::ComboBox.new
+      @border_color_button = Qt6::PushButton.new("Border Color")
       @path_width_spin = Qt6::DoubleSpinBox.new
       @path_line_type_combo = Qt6::ComboBox.new
       @path_color_button = Qt6::PushButton.new("Path Color")
@@ -698,6 +706,10 @@ module WargameMapToolCrystal
             if index = @state.terrain_layer_index
               @state.set_active_layer(index)
             end
+          elsif tool_name == "Border"
+            if index = @state.border_layer_index
+              @state.set_active_layer(index)
+            end
           end
           @state.active_tool = tool_name
           refresh_inspector
@@ -819,6 +831,48 @@ module WargameMapToolCrystal
 
         @state.fill_radius = value
         @canvas.refresh("Fill radius #{value}")
+      end
+
+      @border_width_spin.set_range(1.0, 12.0)
+      @border_width_spin.decimals = 1
+      @border_width_spin.single_step = 0.5
+      @border_width_spin.suffix = " px"
+      @border_width_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_border_object if @state.selected_border_present?)
+
+        object.width = value
+        @canvas.refresh("Updated border width")
+      end
+
+      @border_line_type_combo << "Solid"
+      @border_line_type_combo << "Dashed"
+      @border_line_type_combo << "Dotted"
+      @border_line_type_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless object = (@state.selected_border_object if @state.selected_border_present?)
+
+        object.line_type = case index
+                           when 1
+                             "dashed"
+                           when 2
+                             "dotted"
+                           else
+                             "solid"
+                           end
+        @canvas.refresh("Updated border style")
+      end
+
+      @border_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_border_object if @state.selected_border_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.color, title: "Select Border Color")
+        next unless color
+
+        object.color = color
+        @border_color_button.text = color_button_text("Border", color)
+        @canvas.refresh("Updated border color")
       end
 
       @path_width_spin.set_range(1.0, 12.0)
@@ -1027,6 +1081,16 @@ module WargameMapToolCrystal
         column << @terrain_color_button
         column << build_terrain_preset_row
       end
+      border_controls = Qt6::Widget.new
+      border_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Border")
+        column << @border_label
+        column << Qt6::Label.new("Width")
+        column << @border_width_spin
+        column << Qt6::Label.new("Line Style")
+        column << @border_line_type_combo
+        column << @border_color_button
+      end
       path_controls = Qt6::Widget.new
       path_controls.vbox do |column|
         column << Qt6::Label.new("Selected Path")
@@ -1080,6 +1144,7 @@ module WargameMapToolCrystal
         column << @background_label
         column << background_controls
         column << terrain_controls
+        column << border_controls
         column << path_controls
         column << asset_controls
         column << text_controls
@@ -1157,6 +1222,30 @@ module WargameMapToolCrystal
         @background_offset_x_spin.value = layer.offset_x
         @background_offset_y_spin.value = layer.offset_y
         @background_scale_spin.value = layer.scale
+      end
+      if object = (@state.selected_border_object if @state.selected_border_present?)
+        @border_label.text = "Border: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)}"
+        @border_width_spin.value = object.width
+        @border_line_type_combo.current_index = case object.line_type
+                                                when "dashed"
+                                                  1
+                                                when "dotted"
+                                                  2
+                                                else
+                                                  0
+                                                end
+        @border_color_button.text = color_button_text("Border", object.color)
+        @border_width_spin.enabled = true
+        @border_line_type_combo.enabled = true
+        @border_color_button.enabled = true
+      else
+        @border_label.text = "Border: none selected"
+        @border_width_spin.value = 3.0
+        @border_line_type_combo.current_index = 0
+        @border_color_button.text = "Border Color"
+        @border_width_spin.enabled = false
+        @border_line_type_combo.enabled = false
+        @border_color_button.enabled = false
       end
       if object = (@state.selected_path_object if @state.selected_path_present?)
         @path_label.text = "Path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)}"
@@ -1287,10 +1376,14 @@ module WargameMapToolCrystal
                                end
                              elsif object = (@state.selected_path_object if @state.selected_path_present?)
                                "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection, drag an endpoint handle onto a neighboring hex to reshape it, press Delete to remove it, or edit it in the inspector."
+                             elsif object = (@state.selected_border_object if @state.selected_border_present?)
+                               "Selected border: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click the same edge with the Border tool to reselect it, right-click or press Delete to remove it, or edit width, style, and color in the inspector."
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
+                             elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
+                               "Border tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a border, right-click removes the hovered border, and #{border_layer.border_count} borders are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else

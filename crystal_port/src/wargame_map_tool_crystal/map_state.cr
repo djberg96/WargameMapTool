@@ -6,7 +6,7 @@ module WargameMapToolCrystal
   VERSION = "0.1.0"
 
   class MapState
-    TOOL_NAMES = ["Background", "Fill", "Path", "Text", "Asset"] of String
+    TOOL_NAMES = ["Background", "Fill", "Border", "Path", "Text", "Asset"] of String
 
     property zoom : Float64
     property pan_x : Float64
@@ -24,6 +24,7 @@ module WargameMapToolCrystal
     property hover_screen : Qt6::PointF?
     property fill_radius : Int32
     property pending_path_anchor : Tuple(Int32, Int32)?
+    property selected_border_object : BorderObject?
     property selected_path_object : PathObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
@@ -49,6 +50,7 @@ module WargameMapToolCrystal
       @hover_screen = nil
       @fill_radius = 0
       @pending_path_anchor = nil
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -75,6 +77,7 @@ module WargameMapToolCrystal
       @hover_screen = nil
       @fill_radius = 0
       @pending_path_anchor = nil
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -131,6 +134,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def border_layer : BorderLayer?
+      @layers.each do |layer|
+        return layer.as(BorderLayer) if layer.is_a?(BorderLayer)
+      end
+
+      nil
+    end
+
     def path_layer : PathLayer?
       @layers.each do |layer|
         return layer.as(PathLayer) if layer.is_a?(PathLayer)
@@ -150,6 +161,14 @@ module WargameMapToolCrystal
     def text_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(TextLayer)
+      end
+
+      nil
+    end
+
+    def border_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(BorderLayer)
       end
 
       nil
@@ -194,6 +213,7 @@ module WargameMapToolCrystal
 
       object = TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true)
       layer.add_text(object)
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
@@ -219,6 +239,7 @@ module WargameMapToolCrystal
       snap_asset_to_hex(object) if object.snap_to_hex
 
       layer.add_asset(object)
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
@@ -243,6 +264,7 @@ module WargameMapToolCrystal
 
     def begin_pending_path(anchor : Tuple(Int32, Int32)) : Tuple(Int32, Int32)
       activate_path_layer
+      @selected_border_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = anchor
@@ -270,6 +292,7 @@ module WargameMapToolCrystal
       )
 
       layer.add_path(object)
+      @selected_border_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
@@ -309,6 +332,7 @@ module WargameMapToolCrystal
         opacity: source.opacity,
       )
 
+      @selected_border_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
@@ -348,6 +372,7 @@ module WargameMapToolCrystal
       snap_asset_to_hex(object) if object.snap_to_hex
 
       layer.add_asset(object)
+      @selected_border_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
@@ -379,6 +404,7 @@ module WargameMapToolCrystal
 
     def select_hovered_text : TextObject?
       object = hovered_text_object
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
@@ -395,6 +421,7 @@ module WargameMapToolCrystal
 
     def select_hovered_asset : AssetObject?
       object = hovered_asset_object
+      @selected_border_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
@@ -403,6 +430,7 @@ module WargameMapToolCrystal
 
     def select_hovered_path : PathObject?
       object = hovered_path_object
+      @selected_border_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
@@ -489,6 +517,19 @@ module WargameMapToolCrystal
               end
             else
               json.null
+            end
+          end
+
+          json.field "border_objects" do
+            if layer = border_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
             end
           end
 
@@ -591,6 +632,16 @@ module WargameMapToolCrystal
         end
       end
 
+      @selected_border_object = nil
+      data["border_objects"]?.try(&.as_a?).try do |objects|
+        if layer = border_layer
+          layer.clear_borders
+          objects.each do |object_data|
+            layer.add_border(BorderObject.from_json(object_data))
+          end
+        end
+      end
+
       text_layer.try(&.clear_texts)
       @pending_path_anchor = nil
       @selected_path_object = nil
@@ -636,6 +687,8 @@ module WargameMapToolCrystal
       path_layer = PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54))
       seed_default_path_objects(path_layer)
 
+      border_layer = BorderLayer.new("Borders", "Borders", true, Qt6::Color.new(58, 54, 48))
+
       text_layer = TextLayer.new("Operational Labels", "Text", true, Qt6::Color.new(66, 78, 118))
       seed_default_text_objects(text_layer)
 
@@ -645,6 +698,7 @@ module WargameMapToolCrystal
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
         TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
+        border_layer,
         path_layer,
         text_layer,
         asset_layer,
@@ -655,6 +709,85 @@ module WargameMapToolCrystal
       if index = path_layer_index
         set_active_layer(index)
       end
+    end
+
+    def selected_border_present? : Bool
+      object = @selected_border_object
+      layer = border_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_border_selection : Nil
+      @selected_border_object = nil
+    end
+
+    def create_border(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : BorderObject?
+      layer = border_layer
+      return nil unless layer
+      return nil unless neighboring_hexes?(col_a, row_a, col_b, row_b)
+      return nil if layer.border_at(col_a, row_a, col_b, row_b)
+
+      if index = border_layer_index
+        set_active_layer(index)
+      end
+
+      style_source = selected_border_present? ? @selected_border_object : nil
+      object = BorderObject.new(
+        col_a,
+        row_a,
+        col_b,
+        row_b,
+        style_source ? style_source.color : layer.accent,
+        style_source ? style_source.width : 3.0,
+        style_source ? style_source.line_type : "solid",
+      )
+
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @selected_path_object = nil
+      @selected_border_object = object
+      layer.add_border(object)
+      object
+    end
+
+    def shared_edge_points(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : Tuple(Qt6::PointF, Qt6::PointF)?
+      return nil unless neighboring_hexes?(col_a, row_a, col_b, row_b)
+
+      points_a = hex_points(col_a, row_a)
+      points_b = hex_points(col_b, row_b)
+      shared = [] of Qt6::PointF
+
+      points_a.each do |point_a|
+        points_b.each do |point_b|
+          dx = point_a.x - point_b.x
+          dy = point_a.y - point_b.y
+          if Math.sqrt(dx * dx + dy * dy) <= 0.01
+            shared << point_a
+            break
+          end
+        end
+      end
+
+      return nil unless shared.size == 2
+
+      {shared[0], shared[1]}
+    end
+
+    def adjacent_hexes(col : Int32, row : Int32) : Array(Tuple(Int32, Int32))
+      hexes = [] of Tuple(Int32, Int32)
+
+      @rows.times do |candidate_row|
+        @cols.times do |candidate_col|
+          next if candidate_col == col && candidate_row == row
+          next unless neighboring_hexes?(col, row, candidate_col, candidate_row)
+
+          hexes << {candidate_col, candidate_row}
+        end
+      end
+
+      hexes
     end
 
     private def seed_default_path_objects(layer : PathLayer) : Nil

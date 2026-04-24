@@ -10,6 +10,7 @@ module WargameMapToolCrystal
     @drag_asset_object : AssetObject?
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
+    @hovered_border_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_path_endpoint : String?
     @fill_drag_count : Int32
     @drag_mode : String
@@ -26,6 +27,7 @@ module WargameMapToolCrystal
       @drag_asset_object = nil
       @drag_path_object = nil
       @drag_path_endpoint = nil
+      @hovered_border_edge = nil
       @hovered_path_endpoint = nil
       @fill_drag_count = 0
       @drag_mode = "pan"
@@ -49,11 +51,35 @@ module WargameMapToolCrystal
         @drag_asset_object = nil
         @drag_path_object = nil
         @drag_path_endpoint = nil
+        @hovered_border_edge = nil
         @fill_drag_count = 0
         @drag_mode = "pan"
         @drag_moved = false
 
-        if @state.active_tool == "Fill"
+        handled_press = false
+
+        if @state.active_tool == "Border"
+          @state.hover_screen = event.position
+          @state.hover_hex = @state.pick_hex(event.position)
+          update_hovered_border_edge(event.position)
+
+          if event.button == 2
+            if edge = @hovered_border_edge
+              if object = border_object_for_edge(edge)
+                if (layer = @state.border_layer) && layer.remove_border(object)
+                  @state.clear_border_selection if @state.selected_border_object == object
+                  refresh("Removed border #{edge_label(edge)}")
+                  @state.dragging = false
+                  @press_pointer = nil
+                  @drag_mode = "border_remove"
+                  handled_press = true
+                end
+              end
+            end
+          end
+        end
+
+        if !handled_press && @state.active_tool == "Fill"
           if hover = @state.pick_hex(event.position)
             @state.hover_hex = hover
             if event.button == 1
@@ -64,21 +90,21 @@ module WargameMapToolCrystal
               @drag_mode = "fill_erase"
             end
           end
-        elsif @state.active_tool == "Text" && @state.selected_text_present?
+        elsif !handled_press && @state.active_tool == "Text" && @state.selected_text_present?
           selected = @state.selected_text_object
           hovered = @state.text_layer.try(&.nearest_text(@state, event.position))
           if selected && hovered == selected
             @drag_text_object = selected
             @drag_mode = "text_move"
           end
-        elsif @state.active_tool == "Asset" && @state.selected_asset_present?
+        elsif !handled_press && @state.active_tool == "Asset" && @state.selected_asset_present?
           selected = @state.selected_asset_object
           hovered = @state.asset_layer.try(&.nearest_asset(@state, event.position))
           if selected && hovered == selected
             @drag_asset_object = selected
             @drag_mode = "asset_move"
           end
-        elsif @state.active_tool == "Path" && @state.selected_path_present? && @state.pending_path_anchor.nil?
+        elsif !handled_press && @state.active_tool == "Path" && @state.selected_path_present? && @state.pending_path_anchor.nil?
           selected = @state.selected_path_object
           if selected && (endpoint = selected.endpoint_hit(@state, event.position))
             @drag_path_object = selected
@@ -199,6 +225,24 @@ module WargameMapToolCrystal
               @state.clear_path_selection
               refresh("Cleared path selection")
             end
+          elsif !@drag_moved && @state.active_tool == "Border"
+            if edge = @hovered_border_edge
+              if object = border_object_for_edge(edge)
+                @state.selected_text_object = nil
+                @state.selected_asset_object = nil
+                @state.selected_path_object = nil
+                @state.clear_pending_path_anchor
+                @state.selected_border_object = object
+                refresh("Selected border #{edge_label(edge)}")
+              elsif object = @state.create_border(edge[0], edge[1], edge[2], edge[3])
+                refresh("Created border #{edge_label(object.edge_key)}")
+              else
+                refresh("Border placement failed")
+              end
+            else
+              @state.clear_border_selection
+              refresh("Cleared border selection")
+            end
           elsif !@drag_moved && @state.active_tool == "Asset"
             if object = @state.select_hovered_asset
               refresh("Selected asset '#{object.label}'")
@@ -238,6 +282,7 @@ module WargameMapToolCrystal
       @widget.on_leave do |_event|
         @state.hover_hex = nil
         @state.hover_screen = nil
+        @hovered_border_edge = nil
         @hovered_path_endpoint = nil
         @hover_callback.call("Hover: outside map")
         refresh
@@ -281,6 +326,16 @@ module WargameMapToolCrystal
                 refresh("Path delete failed")
               end
             end
+          elsif @state.active_tool == "Border"
+            if object = (@state.selected_border_object if @state.selected_border_present?)
+              label = edge_label(object.edge_key)
+              if (layer = @state.border_layer) && layer.remove_border(object)
+                @state.clear_border_selection
+                refresh("Deleted border #{label}")
+              else
+                refresh("Border delete failed")
+              end
+            end
           end
         end
       end
@@ -292,6 +347,7 @@ module WargameMapToolCrystal
         draw_layers(painter)
         draw_grid_overlay(painter)
         draw_hover(painter)
+        draw_hovered_border_edge(painter)
         draw_pending_path_preview(painter)
         draw_hovered_path_endpoint(painter)
         draw_hud(painter)
@@ -301,6 +357,7 @@ module WargameMapToolCrystal
     private def update_hover(position : Qt6::PointF) : Nil
       @state.hover_screen = position
       @state.hover_hex = @state.pick_hex(position)
+      update_hovered_border_edge(position)
       @hovered_path_endpoint = nil
 
       if @state.active_tool == "Path" && @state.pending_path_anchor.nil? && (object = (@state.selected_path_object if @state.selected_path_present?))
@@ -321,6 +378,14 @@ module WargameMapToolCrystal
         base_message = "#{base_message} | Path: #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
         if endpoint = @hovered_path_endpoint
           base_message = "#{base_message} | Drag #{endpoint} handle"
+        end
+      elsif @state.active_tool == "Border"
+        if edge = @hovered_border_edge
+          if border_object_for_edge(edge)
+            base_message = "#{base_message} | Border: #{edge_label(edge)}"
+          else
+            base_message = "#{base_message} | New Border: #{edge_label(edge)}"
+          end
         end
       elsif @state.active_tool == "Path"
         if anchor = @state.pending_path_anchor
@@ -412,9 +477,15 @@ module WargameMapToolCrystal
         end
       end
 
-      painter.pen = Qt6::QPen.new(@state.active_layer.accent, 3.0)
-      painter.brush = Qt6::Color.new(0, 0, 0, 0)
-      painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
+      if @state.active_tool == "Border" && @hovered_border_edge
+        painter.pen = Qt6::QPen.new(@state.active_layer.accent, 3.0)
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
+      else
+        painter.pen = Qt6::QPen.new(@state.active_layer.accent, 3.0)
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
+      end
       painter.pen = Qt6::Color.new(46, 48, 54)
       painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y + 18.0), @state.active_tool)
     end
@@ -461,6 +532,36 @@ module WargameMapToolCrystal
       painter.restore
     end
 
+    private def draw_hovered_border_edge(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Border"
+      return unless edge = @hovered_border_edge
+      shared = @state.shared_edge_points(edge[0], edge[1], edge[2], edge[3])
+      return unless shared
+
+      style_source = @state.selected_border_object if @state.selected_border_present?
+      start_point = @state.screen_point(shared[0])
+      end_point = @state.screen_point(shared[1])
+      color = style_source ? style_source.color : @state.active_layer.accent
+      width = style_source ? style_source.width : 3.0
+      line_type = style_source ? style_source.line_type : "solid"
+      pen = Qt6::QPen.new(color, width)
+      pen.style = case line_type
+                  when "dashed"
+                    Qt6::PenStyle::DashLine
+                  when "dotted"
+                    Qt6::PenStyle::DotLine
+                  else
+                    Qt6::PenStyle::SolidLine
+                  end
+
+      painter.save
+      painter.pen = pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = border_object_for_edge(edge) ? 0.85 : 0.6
+      painter.draw_line(start_point, end_point)
+      painter.restore
+    end
+
     private def draw_pending_path_preview(painter : Qt6::QPainter) : Nil
       return unless @state.active_tool == "Path"
       return unless anchor = @state.pending_path_anchor
@@ -504,6 +605,56 @@ module WargameMapToolCrystal
       painter.draw_text(Qt6::PointF.new(20.0, 28.0), "Tool #{@state.active_tool} | Layer #{@state.active_layer.name} | Zoom #{@state.zoom.round(2)}x")
       painter.font = Qt6::QFont.new(point_size: 10)
       painter.draw_text(Qt6::PointF.new(20.0, 48.0), "Crystal Qt6 vertical slice for WargameMapTool")
+    end
+
+    private def update_hovered_border_edge(position : Qt6::PointF) : Nil
+      @hovered_border_edge = nil
+      return unless @state.active_tool == "Border"
+      return unless hover = @state.hover_hex
+
+      best = nil
+      best_distance = 12.0
+
+      @state.adjacent_hexes(hover[0], hover[1]).each do |neighbor|
+        shared = @state.shared_edge_points(hover[0], hover[1], neighbor[0], neighbor[1])
+        next unless shared
+
+        start_point = @state.screen_point(shared[0])
+        end_point = @state.screen_point(shared[1])
+        distance = distance_to_segment(position, start_point, end_point)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = BorderObject.new(hover[0], hover[1], neighbor[0], neighbor[1]).edge_key
+      end
+
+      @hovered_border_edge = best
+    end
+
+    private def border_object_for_edge(edge : Tuple(Int32, Int32, Int32, Int32)) : BorderObject?
+      layer = @state.border_layer
+      return nil unless layer
+
+      layer.border_at(edge[0], edge[1], edge[2], edge[3])
+    end
+
+    private def edge_label(edge : Tuple(Int32, Int32, Int32, Int32)) : String
+      "#{@state.hex_label(edge[0], edge[1])}-#{@state.hex_label(edge[2], edge[3])}"
+    end
+
+    private def distance_to_segment(point : Qt6::PointF, start_point : Qt6::PointF, end_point : Qt6::PointF) : Float64
+      dx = end_point.x - start_point.x
+      dy = end_point.y - start_point.y
+      length_squared = dx * dx + dy * dy
+      return Float64::INFINITY if length_squared <= 0.001
+
+      t = (((point.x - start_point.x) * dx) + ((point.y - start_point.y) * dy)) / length_squared
+      t = t.clamp(0.0, 1.0)
+      projection_x = start_point.x + dx * t
+      projection_y = start_point.y + dy * t
+      delta_x = point.x - projection_x
+      delta_y = point.y - projection_y
+      Math.sqrt(delta_x * delta_x + delta_y * delta_y)
     end
   end
 end
