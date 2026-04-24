@@ -57,14 +57,10 @@ module WargameMapToolCrystal
           if hover = @state.pick_hex(event.position)
             @state.hover_hex = hover
             if event.button == 1
-              if paint_fill(hover)
-                @fill_drag_count = 1
-              end
+              @fill_drag_count = paint_fill(hover)
               @drag_mode = "fill_paint"
             elsif event.button == 2
-              if clear_fill(hover)
-                @fill_drag_count = 1
-              end
+              @fill_drag_count = clear_fill(hover)
               @drag_mode = "fill_erase"
             end
           end
@@ -113,13 +109,13 @@ module WargameMapToolCrystal
               @state.hover_screen = event.position
               @state.hover_hex = @state.pick_hex(event.position)
               if hover = @state.hover_hex
-                @fill_drag_count += 1 if paint_fill(hover)
+                @fill_drag_count += paint_fill(hover)
               end
             elsif @drag_mode == "fill_erase"
               @state.hover_screen = event.position
               @state.hover_hex = @state.pick_hex(event.position)
               if hover = @state.hover_hex
-                @fill_drag_count += 1 if clear_fill(hover)
+                @fill_drag_count += clear_fill(hover)
               end
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
@@ -402,16 +398,18 @@ module WargameMapToolCrystal
       center = @state.screen_point(@state.hex_center(hover[0], hover[1]))
       if @state.active_tool == "Fill"
         preview_color = @state.terrain_layer.try(&.accent) || @state.active_layer.accent
-        polygon = Qt6::QPolygonF.new(
-          @state.hex_points(hover[0], hover[1]).map { |point| @state.screen_point(point) }
-        )
+        @state.hexes_in_radius(hover[0], hover[1]).each do |hex|
+          polygon = Qt6::QPolygonF.new(
+            @state.hex_points(hex[0], hex[1]).map { |point| @state.screen_point(point) }
+          )
 
-        painter.save
-        painter.pen = Qt6::QPen.new(preview_color, 2.0)
-        painter.brush = preview_color
-        painter.opacity = 0.28
-        painter.draw_polygon(polygon)
-        painter.restore
+          painter.save
+          painter.pen = Qt6::QPen.new(preview_color, 2.0)
+          painter.brush = preview_color
+          painter.opacity = 0.28
+          painter.draw_polygon(polygon)
+          painter.restore
+        end
       end
 
       painter.pen = Qt6::QPen.new(@state.active_layer.accent, 3.0)
@@ -421,16 +419,24 @@ module WargameMapToolCrystal
       painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y + 18.0), @state.active_tool)
     end
 
-    private def paint_fill(hex : Tuple(Int32, Int32)) : Bool
-      return false unless layer = @state.terrain_layer
+    private def paint_fill(hex : Tuple(Int32, Int32)) : Int32
+      return 0 unless layer = @state.terrain_layer
 
-      layer.set_fill(hex[0], hex[1], layer.accent)
+      changed = 0
+      @state.hexes_in_radius(hex[0], hex[1]).each do |coords|
+        changed += 1 if layer.set_fill(coords[0], coords[1], layer.accent)
+      end
+      changed
     end
 
-    private def clear_fill(hex : Tuple(Int32, Int32)) : Bool
-      return false unless layer = @state.terrain_layer
+    private def clear_fill(hex : Tuple(Int32, Int32)) : Int32
+      return 0 unless layer = @state.terrain_layer
 
-      layer.clear_fill(hex[0], hex[1])
+      changed = 0
+      @state.hexes_in_radius(hex[0], hex[1]).each do |coords|
+        changed += 1 if layer.clear_fill(coords[0], coords[1])
+      end
+      changed
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil

@@ -111,6 +111,7 @@ module WargameMapToolCrystal
     @background_offset_x_spin : Qt6::DoubleSpinBox
     @background_offset_y_spin : Qt6::DoubleSpinBox
     @background_scale_spin : Qt6::DoubleSpinBox
+    @terrain_radius_spin : Qt6::SpinBox
     @terrain_color_button : Qt6::PushButton
     @terrain_preset_buttons : Array(Qt6::PushButton)
     @updating_panel : Bool
@@ -161,6 +162,7 @@ module WargameMapToolCrystal
       @background_offset_x_spin = Qt6::DoubleSpinBox.new
       @background_offset_y_spin = Qt6::DoubleSpinBox.new
       @background_scale_spin = Qt6::DoubleSpinBox.new
+      @terrain_radius_spin = Qt6::SpinBox.new
       @terrain_color_button = Qt6::PushButton.new("Fill Color")
       @terrain_preset_buttons = build_terrain_preset_buttons
       @updating_panel = false
@@ -773,6 +775,16 @@ module WargameMapToolCrystal
         end
       end
 
+      @terrain_radius_spin.set_range(0, 3)
+      @terrain_radius_spin.single_step = 1
+      @terrain_radius_spin.suffix = " hex"
+      @terrain_radius_spin.on_value_changed do |value|
+        next if @updating_panel
+
+        @state.fill_radius = value
+        @canvas.refresh("Fill radius #{value}")
+      end
+
       @path_width_spin.set_range(1.0, 12.0)
       @path_width_spin.decimals = 1
       @path_width_spin.single_step = 0.5
@@ -974,6 +986,8 @@ module WargameMapToolCrystal
       terrain_controls.vbox do |column|
         column << Qt6::Label.new("Fill Tool")
         column << @terrain_fill_label
+        column << Qt6::Label.new("Radius")
+        column << @terrain_radius_spin
         column << @terrain_color_button
         column << build_terrain_preset_row
       end
@@ -1090,12 +1104,16 @@ module WargameMapToolCrystal
                                end
       if layer = @state.terrain_layer
         @terrain_fill_label.text = "Painted hexes: #{layer.fill_count}"
+        @terrain_radius_spin.value = @state.fill_radius
         @terrain_color_button.text = color_button_text("Fill", layer.accent)
+        @terrain_radius_spin.enabled = true
         @terrain_color_button.enabled = true
         update_terrain_preset_button_styles(layer.accent)
       else
         @terrain_fill_label.text = "Painted hexes: unavailable"
+        @terrain_radius_spin.value = 0
         @terrain_color_button.text = "Fill Color"
+        @terrain_radius_spin.enabled = false
         @terrain_color_button.enabled = false
         update_terrain_preset_button_styles(nil)
       end
@@ -1238,7 +1256,7 @@ module WargameMapToolCrystal
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
-                               "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints hovered hexes with #{terrain_layer.fill_count} painted so far; right-drag clears fills. The inspector button changes the current fill color."
+                               "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius."
                              else
                                "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
                              end

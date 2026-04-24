@@ -22,6 +22,7 @@ module WargameMapToolCrystal
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
+    property fill_radius : Int32
     property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_path_object : PathObject?
     property selected_text_object : TextObject?
@@ -46,6 +47,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @fill_radius = 0
       @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_text_object = nil
@@ -71,6 +73,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @fill_radius = 0
       @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_text_object = nil
@@ -822,8 +825,35 @@ module WargameMapToolCrystal
       ((q_a - q_b).abs + (r_a - r_b).abs + (s_a - s_b).abs) // 2 == 1
     end
 
+    def hexes_in_radius(center_col : Int32, center_row : Int32, radius : Int32 = @fill_radius) : Array(Tuple(Int32, Int32))
+      return [] of Tuple(Int32, Int32) unless valid_hex_coord?(center_col, center_row)
+
+      limit = radius.clamp(0, [@cols, @rows].min)
+      return [{center_col, center_row}] if limit == 0
+
+      center_q, center_r, center_s = offset_to_cube(center_col, center_row)
+      hexes = [] of Tuple(Int32, Int32)
+
+      @rows.times do |row|
+        @cols.times do |col|
+          q, r, s = offset_to_cube(col, row)
+          distance = ((center_q - q).abs + (center_r - r).abs + (center_s - s).abs) // 2
+          hexes << {col, row} if distance <= limit
+        end
+      end
+
+      hexes
+    end
+
     private def valid_hex_coord?(col : Int32, row : Int32) : Bool
       col >= 0 && col < @cols && row >= 0 && row < @rows
+    end
+
+    private def offset_to_cube(col : Int32, row : Int32) : Tuple(Int32, Int32, Int32)
+      q = col - ((row - (row & 1)) // 2)
+      r = row
+      s = -q - r
+      {q, r, s}
     end
 
     def hex_label(col : Int32, row : Int32) : String
