@@ -11,6 +11,7 @@ module WargameMapToolCrystal
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
     @hovered_border_edge : Tuple(Int32, Int32, Int32, Int32)?
+    @hovered_hexside_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_path_endpoint : String?
     @fill_drag_count : Int32
     @drag_mode : String
@@ -28,6 +29,7 @@ module WargameMapToolCrystal
       @drag_path_object = nil
       @drag_path_endpoint = nil
       @hovered_border_edge = nil
+      @hovered_hexside_edge = nil
       @hovered_path_endpoint = nil
       @fill_drag_count = 0
       @drag_mode = "pan"
@@ -52,6 +54,7 @@ module WargameMapToolCrystal
         @drag_path_object = nil
         @drag_path_endpoint = nil
         @hovered_border_edge = nil
+        @hovered_hexside_edge = nil
         @fill_drag_count = 0
         @drag_mode = "pan"
         @drag_moved = false
@@ -72,6 +75,25 @@ module WargameMapToolCrystal
                   @state.dragging = false
                   @press_pointer = nil
                   @drag_mode = "border_remove"
+                  handled_press = true
+                end
+              end
+            end
+          end
+        elsif @state.active_tool == "Hexside"
+          @state.hover_screen = event.position
+          @state.hover_hex = @state.pick_hex(event.position)
+          update_hovered_hexside_edge(event.position)
+
+          if event.button == 2
+            if edge = @hovered_hexside_edge
+              if object = hexside_object_for_edge(edge)
+                if (layer = @state.hexside_layer) && layer.remove_hexside(object)
+                  @state.clear_hexside_selection if @state.selected_hexside_object == object
+                  refresh("Removed hexside #{edge_label(edge)}")
+                  @state.dragging = false
+                  @press_pointer = nil
+                  @drag_mode = "hexside_remove"
                   handled_press = true
                 end
               end
@@ -243,6 +265,25 @@ module WargameMapToolCrystal
               @state.clear_border_selection
               refresh("Cleared border selection")
             end
+          elsif !@drag_moved && @state.active_tool == "Hexside"
+            if edge = @hovered_hexside_edge
+              if object = hexside_object_for_edge(edge)
+                @state.selected_border_object = nil
+                @state.selected_text_object = nil
+                @state.selected_asset_object = nil
+                @state.selected_path_object = nil
+                @state.clear_pending_path_anchor
+                @state.selected_hexside_object = object
+                refresh("Selected hexside #{edge_label(edge)}")
+              elsif object = @state.create_hexside(edge[0], edge[1], edge[2], edge[3])
+                refresh("Created hexside #{edge_label(object.edge_key)}")
+              else
+                refresh("Hexside placement failed")
+              end
+            else
+              @state.clear_hexside_selection
+              refresh("Cleared hexside selection")
+            end
           elsif !@drag_moved && @state.active_tool == "Asset"
             if object = @state.select_hovered_asset
               refresh("Selected asset '#{object.label}'")
@@ -283,6 +324,7 @@ module WargameMapToolCrystal
         @state.hover_hex = nil
         @state.hover_screen = nil
         @hovered_border_edge = nil
+        @hovered_hexside_edge = nil
         @hovered_path_endpoint = nil
         @hover_callback.call("Hover: outside map")
         refresh
@@ -336,6 +378,16 @@ module WargameMapToolCrystal
                 refresh("Border delete failed")
               end
             end
+          elsif @state.active_tool == "Hexside"
+            if object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+              label = edge_label(object.edge_key)
+              if (layer = @state.hexside_layer) && layer.remove_hexside(object)
+                @state.clear_hexside_selection
+                refresh("Deleted hexside #{label}")
+              else
+                refresh("Hexside delete failed")
+              end
+            end
           end
         end
       end
@@ -348,6 +400,7 @@ module WargameMapToolCrystal
         draw_grid_overlay(painter)
         draw_hover(painter)
         draw_hovered_border_edge(painter)
+        draw_hovered_hexside_edge(painter)
         draw_pending_path_preview(painter)
         draw_hovered_path_endpoint(painter)
         draw_hud(painter)
@@ -358,6 +411,7 @@ module WargameMapToolCrystal
       @state.hover_screen = position
       @state.hover_hex = @state.pick_hex(position)
       update_hovered_border_edge(position)
+      update_hovered_hexside_edge(position)
       @hovered_path_endpoint = nil
 
       if @state.active_tool == "Path" && @state.pending_path_anchor.nil? && (object = (@state.selected_path_object if @state.selected_path_present?))
@@ -385,6 +439,14 @@ module WargameMapToolCrystal
             base_message = "#{base_message} | Border: #{edge_label(edge)}"
           else
             base_message = "#{base_message} | New Border: #{edge_label(edge)}"
+          end
+        end
+      elsif @state.active_tool == "Hexside"
+        if edge = @hovered_hexside_edge
+          if hexside_object_for_edge(edge)
+            base_message = "#{base_message} | Hexside: #{edge_label(edge)}"
+          else
+            base_message = "#{base_message} | New Hexside: #{edge_label(edge)}"
           end
         end
       elsif @state.active_tool == "Path"
@@ -562,6 +624,28 @@ module WargameMapToolCrystal
       painter.restore
     end
 
+    private def draw_hovered_hexside_edge(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Hexside"
+      return unless edge = @hovered_hexside_edge
+      shared = @state.shared_edge_points(edge[0], edge[1], edge[2], edge[3])
+      return unless shared
+
+      style_source = @state.selected_hexside_object if @state.selected_hexside_present?
+      start_point = @state.screen_point(shared[0])
+      end_point = @state.screen_point(shared[1])
+      color = style_source ? style_source.color : @state.active_layer.accent
+      width = style_source ? style_source.width : 4.0
+      pen = Qt6::QPen.new(color, width)
+      pen.cap_style = Qt6::PenCapStyle::RoundCap
+
+      painter.save
+      painter.pen = pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = hexside_object_for_edge(edge) ? 0.88 : 0.62
+      painter.draw_line(start_point, end_point)
+      painter.restore
+    end
+
     private def draw_pending_path_preview(painter : Qt6::QPainter) : Nil
       return unless @state.active_tool == "Path"
       return unless anchor = @state.pending_path_anchor
@@ -631,11 +715,42 @@ module WargameMapToolCrystal
       @hovered_border_edge = best
     end
 
+    private def update_hovered_hexside_edge(position : Qt6::PointF) : Nil
+      @hovered_hexside_edge = nil
+      return unless @state.active_tool == "Hexside"
+      return unless hover = @state.hover_hex
+
+      best = nil
+      best_distance = 12.0
+
+      @state.adjacent_hexes(hover[0], hover[1]).each do |neighbor|
+        shared = @state.shared_edge_points(hover[0], hover[1], neighbor[0], neighbor[1])
+        next unless shared
+
+        start_point = @state.screen_point(shared[0])
+        end_point = @state.screen_point(shared[1])
+        distance = distance_to_segment(position, start_point, end_point)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = HexsideObject.new(hover[0], hover[1], neighbor[0], neighbor[1]).edge_key
+      end
+
+      @hovered_hexside_edge = best
+    end
+
     private def border_object_for_edge(edge : Tuple(Int32, Int32, Int32, Int32)) : BorderObject?
       layer = @state.border_layer
       return nil unless layer
 
       layer.border_at(edge[0], edge[1], edge[2], edge[3])
+    end
+
+    private def hexside_object_for_edge(edge : Tuple(Int32, Int32, Int32, Int32)) : HexsideObject?
+      layer = @state.hexside_layer
+      return nil unless layer
+
+      layer.hexside_at(edge[0], edge[1], edge[2], edge[3])
     end
 
     private def edge_label(edge : Tuple(Int32, Int32, Int32, Int32)) : String

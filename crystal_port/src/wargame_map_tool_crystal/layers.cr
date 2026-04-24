@@ -343,6 +343,198 @@ module WargameMapToolCrystal
     end
   end
 
+  class HexsideObject
+    property col_a : Int32
+    property row_a : Int32
+    property col_b : Int32
+    property row_b : Int32
+    property color : Qt6::Color
+    property width : Float64
+    property opacity : Float64
+
+    def initialize(
+      col_a : Int32,
+      row_a : Int32,
+      col_b : Int32,
+      row_b : Int32,
+      @color : Qt6::Color = Qt6::Color.new(70, 108, 154),
+      @width : Float64 = 4.0,
+      @opacity : Float64 = 1.0,
+    )
+      if canonical_pair?(col_a, row_a, col_b, row_b)
+        @col_a = col_a
+        @row_a = row_a
+        @col_b = col_b
+        @row_b = row_b
+      else
+        @col_a = col_b
+        @row_a = row_b
+        @col_b = col_a
+        @row_b = row_a
+      end
+    end
+
+    def edge_key : Tuple(Int32, Int32, Int32, Int32)
+      {@col_a, @row_a, @col_b, @row_b}
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "col_a", @col_a
+        json.field "row_a", @row_a
+        json.field "col_b", @col_b
+        json.field "row_b", @row_b
+        json.field "width", @width
+        json.field "opacity", @opacity
+        json.field "color" do
+          json.object do
+            json.field "red", @color.red
+            json.field "green", @color.green
+            json.field "blue", @color.blue
+            json.field "alpha", @color.alpha
+          end
+        end
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      color_data = data["color"]?
+      color = Qt6::Color.new(
+        (color_data.try { |value| value["red"]?.try(&.as_i?) } || 70).to_i32,
+        (color_data.try { |value| value["green"]?.try(&.as_i?) } || 108).to_i32,
+        (color_data.try { |value| value["blue"]?.try(&.as_i?) } || 154).to_i32,
+        (color_data.try { |value| value["alpha"]?.try(&.as_i?) } || 255).to_i32,
+      )
+
+      new(
+        (data["col_a"]?.try(&.as_i?) || 0).to_i32,
+        (data["row_a"]?.try(&.as_i?) || 0).to_i32,
+        (data["col_b"]?.try(&.as_i?) || 0).to_i32,
+        (data["row_b"]?.try(&.as_i?) || 0).to_i32,
+        color,
+        data["width"]?.try(&.as_f?) || 4.0,
+        data["opacity"]?.try(&.as_f?) || 1.0,
+      )
+    end
+
+    def screen_distance_to(state : MapState, point : Qt6::PointF) : Float64
+      edge = state.shared_edge_points(@col_a, @row_a, @col_b, @row_b)
+      return Float64::INFINITY unless edge
+
+      start_point = state.screen_point(edge[0])
+      end_point = state.screen_point(edge[1])
+      dx = end_point.x - start_point.x
+      dy = end_point.y - start_point.y
+      length_squared = dx * dx + dy * dy
+      return Float64::INFINITY if length_squared <= 0.001
+
+      t = (((point.x - start_point.x) * dx) + ((point.y - start_point.y) * dy)) / length_squared
+      t = t.clamp(0.0, 1.0)
+      projection_x = start_point.x + dx * t
+      projection_y = start_point.y + dy * t
+      distance_x = point.x - projection_x
+      distance_y = point.y - projection_y
+      Math.sqrt(distance_x * distance_x + distance_y * distance_y)
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      edge = state.shared_edge_points(@col_a, @row_a, @col_b, @row_b)
+      return unless edge
+
+      start_point = state.screen_point(edge[0])
+      end_point = state.screen_point(edge[1])
+      selection_pen = Qt6::QPen.new(accent, @width + 4.0)
+
+      painter.save
+      painter.pen = selection_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = 0.28
+      painter.draw_line(start_point, end_point)
+      painter.restore
+    end
+
+    private def canonical_pair?(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : Bool
+      row_a < row_b || (row_a == row_b && col_a <= col_b)
+    end
+  end
+
+  class HexsideLayer < MapLayer
+    getter objects : Array(HexsideObject)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of HexsideObject
+    end
+
+    def add_hexside(object : HexsideObject) : Nil
+      @objects.reject! { |existing| existing.edge_key == object.edge_key }
+      @objects << object
+    end
+
+    def clear_hexsides : Nil
+      @objects.clear
+    end
+
+    def hexside_count : Int32
+      @objects.size.to_i32
+    end
+
+    def remove_hexside(object : HexsideObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
+    def hexside_at(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : HexsideObject?
+      probe = HexsideObject.new(col_a, row_a, col_b, row_b)
+      @objects.find { |object| object.edge_key == probe.edge_key }
+    end
+
+    def nearest_hexside(state : MapState, screen_point : Qt6::PointF, max_distance : Float64 = 10.0) : HexsideObject?
+      best = nil
+      best_distance = max_distance
+
+      @objects.each do |object|
+        distance = object.screen_distance_to(state, screen_point)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = object
+      end
+
+      best
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      layer_opacity = opacity / 100.0
+
+      @objects.each do |object|
+        edge = state.shared_edge_points(object.col_a, object.row_a, object.col_b, object.row_b)
+        next unless edge
+
+        start_point = state.screen_point(edge[0])
+        end_point = state.screen_point(edge[1])
+        pen = Qt6::QPen.new(object.color, object.width)
+        pen.cap_style = Qt6::PenCapStyle::RoundCap
+
+        painter.save
+        painter.pen = pen
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.opacity = (layer_opacity * object.opacity).clamp(0.0, 1.0)
+        painter.draw_line(start_point, end_point)
+        painter.restore
+      end
+
+      if selected = state.selected_hexside_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
+      end
+    end
+  end
+
   class PathObject
     property col_a : Int32
     property row_a : Int32

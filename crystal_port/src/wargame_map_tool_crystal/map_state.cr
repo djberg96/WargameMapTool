@@ -6,7 +6,7 @@ module WargameMapToolCrystal
   VERSION = "0.1.0"
 
   class MapState
-    TOOL_NAMES = ["Background", "Fill", "Border", "Path", "Text", "Asset"] of String
+    TOOL_NAMES = ["Background", "Fill", "Border", "Hexside", "Path", "Text", "Asset"] of String
 
     property zoom : Float64
     property pan_x : Float64
@@ -25,6 +25,7 @@ module WargameMapToolCrystal
     property fill_radius : Int32
     property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_border_object : BorderObject?
+    property selected_hexside_object : HexsideObject?
     property selected_path_object : PathObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
@@ -51,6 +52,7 @@ module WargameMapToolCrystal
       @fill_radius = 0
       @pending_path_anchor = nil
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -78,6 +80,7 @@ module WargameMapToolCrystal
       @fill_radius = 0
       @pending_path_anchor = nil
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -150,6 +153,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def hexside_layer : HexsideLayer?
+      @layers.each do |layer|
+        return layer.as(HexsideLayer) if layer.is_a?(HexsideLayer)
+      end
+
+      nil
+    end
+
     def asset_layer : AssetLayer?
       @layers.each do |layer|
         return layer.as(AssetLayer) if layer.is_a?(AssetLayer)
@@ -198,6 +209,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def hexside_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(HexsideLayer)
+      end
+
+      nil
+    end
+
     def add_text_label(text : String) : Bool
       clean_text = text.strip
       return false if clean_text.empty?
@@ -214,6 +233,7 @@ module WargameMapToolCrystal
       object = TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true)
       layer.add_text(object)
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
@@ -240,6 +260,7 @@ module WargameMapToolCrystal
 
       layer.add_asset(object)
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
@@ -265,6 +286,7 @@ module WargameMapToolCrystal
     def begin_pending_path(anchor : Tuple(Int32, Int32)) : Tuple(Int32, Int32)
       activate_path_layer
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = anchor
@@ -293,6 +315,7 @@ module WargameMapToolCrystal
 
       layer.add_path(object)
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
@@ -333,6 +356,7 @@ module WargameMapToolCrystal
       )
 
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
@@ -373,6 +397,7 @@ module WargameMapToolCrystal
 
       layer.add_asset(object)
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
@@ -405,6 +430,7 @@ module WargameMapToolCrystal
     def select_hovered_text : TextObject?
       object = hovered_text_object
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
@@ -422,6 +448,7 @@ module WargameMapToolCrystal
     def select_hovered_asset : AssetObject?
       object = hovered_asset_object
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
@@ -431,6 +458,7 @@ module WargameMapToolCrystal
     def select_hovered_path : PathObject?
       object = hovered_path_object
       @selected_border_object = nil
+      @selected_hexside_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
@@ -522,6 +550,19 @@ module WargameMapToolCrystal
 
           json.field "border_objects" do
             if layer = border_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
+
+          json.field "hexside_objects" do
+            if layer = hexside_layer
               json.array do
                 layer.objects.each do |object|
                   object.write_json(json)
@@ -633,11 +674,21 @@ module WargameMapToolCrystal
       end
 
       @selected_border_object = nil
+      @selected_hexside_object = nil
       data["border_objects"]?.try(&.as_a?).try do |objects|
         if layer = border_layer
           layer.clear_borders
           objects.each do |object_data|
             layer.add_border(BorderObject.from_json(object_data))
+          end
+        end
+      end
+
+      data["hexside_objects"]?.try(&.as_a?).try do |objects|
+        if layer = hexside_layer
+          layer.clear_hexsides
+          objects.each do |object_data|
+            layer.add_hexside(HexsideObject.from_json(object_data))
           end
         end
       end
@@ -688,6 +739,7 @@ module WargameMapToolCrystal
       seed_default_path_objects(path_layer)
 
       border_layer = BorderLayer.new("Borders", "Borders", true, Qt6::Color.new(58, 54, 48))
+      hexside_layer = HexsideLayer.new("Hexsides", "Hexsides", true, Qt6::Color.new(70, 108, 154))
 
       text_layer = TextLayer.new("Operational Labels", "Text", true, Qt6::Color.new(66, 78, 118))
       seed_default_text_objects(text_layer)
@@ -699,6 +751,7 @@ module WargameMapToolCrystal
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
         TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
         border_layer,
+        hexside_layer,
         path_layer,
         text_layer,
         asset_layer,
@@ -719,8 +772,20 @@ module WargameMapToolCrystal
       layer.objects.includes?(object)
     end
 
+    def selected_hexside_present? : Bool
+      object = @selected_hexside_object
+      layer = hexside_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
     def clear_border_selection : Nil
       @selected_border_object = nil
+    end
+
+    def clear_hexside_selection : Nil
+      @selected_hexside_object = nil
     end
 
     def create_border(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : BorderObject?
@@ -747,8 +812,39 @@ module WargameMapToolCrystal
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = nil
+      @selected_hexside_object = nil
       @selected_border_object = object
       layer.add_border(object)
+      object
+    end
+
+    def create_hexside(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : HexsideObject?
+      layer = hexside_layer
+      return nil unless layer
+      return nil unless neighboring_hexes?(col_a, row_a, col_b, row_b)
+      return nil if layer.hexside_at(col_a, row_a, col_b, row_b)
+
+      if index = hexside_layer_index
+        set_active_layer(index)
+      end
+
+      style_source = selected_hexside_present? ? @selected_hexside_object : nil
+      object = HexsideObject.new(
+        col_a,
+        row_a,
+        col_b,
+        row_b,
+        style_source ? style_source.color : layer.accent,
+        style_source ? style_source.width : 4.0,
+        style_source ? style_source.opacity : 1.0,
+      )
+
+      @selected_border_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @selected_path_object = nil
+      @selected_hexside_object = object
+      layer.add_hexside(object)
       object
     end
 

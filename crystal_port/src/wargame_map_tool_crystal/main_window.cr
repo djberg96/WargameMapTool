@@ -87,6 +87,7 @@ module WargameMapToolCrystal
     @background_label : Qt6::Label
     @terrain_fill_label : Qt6::Label
     @border_label : Qt6::Label
+    @hexside_label : Qt6::Label
     @path_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
@@ -96,6 +97,9 @@ module WargameMapToolCrystal
     @border_width_spin : Qt6::DoubleSpinBox
     @border_line_type_combo : Qt6::ComboBox
     @border_color_button : Qt6::PushButton
+    @hexside_width_spin : Qt6::DoubleSpinBox
+    @hexside_color_button : Qt6::PushButton
+    @hexside_opacity_spin : Qt6::DoubleSpinBox
     @path_width_spin : Qt6::DoubleSpinBox
     @path_line_type_combo : Qt6::ComboBox
     @path_color_button : Qt6::PushButton
@@ -142,6 +146,7 @@ module WargameMapToolCrystal
       @background_label = Qt6::Label.new
       @terrain_fill_label = Qt6::Label.new
       @border_label = Qt6::Label.new
+      @hexside_label = Qt6::Label.new
       @path_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
@@ -151,6 +156,9 @@ module WargameMapToolCrystal
       @border_width_spin = Qt6::DoubleSpinBox.new
       @border_line_type_combo = Qt6::ComboBox.new
       @border_color_button = Qt6::PushButton.new("Border Color")
+      @hexside_width_spin = Qt6::DoubleSpinBox.new
+      @hexside_color_button = Qt6::PushButton.new("Hexside Color")
+      @hexside_opacity_spin = Qt6::DoubleSpinBox.new
       @path_width_spin = Qt6::DoubleSpinBox.new
       @path_line_type_combo = Qt6::ComboBox.new
       @path_color_button = Qt6::PushButton.new("Path Color")
@@ -507,6 +515,33 @@ module WargameMapToolCrystal
         end
       end
 
+      delete_hexside_action = Qt6::Action.new("Delete Selected Hexside…", @widget)
+      delete_hexside_action.on_triggered do
+        object = @state.selected_hexside_object if @state.selected_hexside_present?
+        unless object
+          handle_status("Select a hexside to delete it")
+          next
+        end
+
+        label = "#{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Hexside",
+          text: "Delete hexside #{label}?",
+          informative_text: "This removes the selected hexside segment from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.hexside_layer) && layer.remove_hexside(object)
+          @state.clear_hexside_selection
+          refresh_all("Deleted hexside #{label}")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Hexside delete failed")
+        end
+      end
+
       clear_fills_action = Qt6::Action.new("Clear All Fills…", @widget)
       clear_fills_action.on_triggered do
         layer = @state.terrain_layer
@@ -688,6 +723,7 @@ module WargameMapToolCrystal
       edit_menu << duplicate_path_action
       edit_menu << delete_path_action
       edit_menu << delete_border_action
+      edit_menu << delete_hexside_action
       edit_menu << clear_fills_action
       edit_menu << duplicate_asset_action
       edit_menu << reset_asset_transform_action
@@ -736,6 +772,10 @@ module WargameMapToolCrystal
             end
           elsif tool_name == "Border"
             if index = @state.border_layer_index
+              @state.set_active_layer(index)
+            end
+          elsif tool_name == "Hexside"
+            if index = @state.hexside_layer_index
               @state.set_active_layer(index)
             end
           end
@@ -901,6 +941,41 @@ module WargameMapToolCrystal
         object.color = color
         @border_color_button.text = color_button_text("Border", color)
         @canvas.refresh("Updated border color")
+      end
+
+      @hexside_width_spin.set_range(1.0, 12.0)
+      @hexside_width_spin.decimals = 1
+      @hexside_width_spin.single_step = 0.5
+      @hexside_width_spin.suffix = " px"
+      @hexside_width_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+
+        object.width = value
+        @canvas.refresh("Updated hexside width")
+      end
+
+      @hexside_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.color, title: "Select Hexside Color")
+        next unless color
+
+        object.color = color
+        @hexside_color_button.text = color_button_text("Hexside", color)
+        @canvas.refresh("Updated hexside color")
+      end
+
+      @hexside_opacity_spin.set_range(0.0, 1.0)
+      @hexside_opacity_spin.decimals = 2
+      @hexside_opacity_spin.single_step = 0.05
+      @hexside_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+
+        object.opacity = value
+        @canvas.refresh("Updated hexside opacity")
       end
 
       @path_width_spin.set_range(1.0, 12.0)
@@ -1119,6 +1194,16 @@ module WargameMapToolCrystal
         column << @border_line_type_combo
         column << @border_color_button
       end
+      hexside_controls = Qt6::Widget.new
+      hexside_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Hexside")
+        column << @hexside_label
+        column << Qt6::Label.new("Width")
+        column << @hexside_width_spin
+        column << @hexside_color_button
+        column << Qt6::Label.new("Opacity")
+        column << @hexside_opacity_spin
+      end
       path_controls = Qt6::Widget.new
       path_controls.vbox do |column|
         column << Qt6::Label.new("Selected Path")
@@ -1173,6 +1258,7 @@ module WargameMapToolCrystal
         column << background_controls
         column << terrain_controls
         column << border_controls
+        column << hexside_controls
         column << path_controls
         column << asset_controls
         column << text_controls
@@ -1274,6 +1360,23 @@ module WargameMapToolCrystal
         @border_width_spin.enabled = false
         @border_line_type_combo.enabled = false
         @border_color_button.enabled = false
+      end
+      if object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+        @hexside_label.text = "Hexside: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)}"
+        @hexside_width_spin.value = object.width
+        @hexside_color_button.text = color_button_text("Hexside", object.color)
+        @hexside_opacity_spin.value = object.opacity
+        @hexside_width_spin.enabled = true
+        @hexside_color_button.enabled = true
+        @hexside_opacity_spin.enabled = true
+      else
+        @hexside_label.text = "Hexside: none selected"
+        @hexside_width_spin.value = 4.0
+        @hexside_color_button.text = "Hexside Color"
+        @hexside_opacity_spin.value = 1.0
+        @hexside_width_spin.enabled = false
+        @hexside_color_button.enabled = false
+        @hexside_opacity_spin.enabled = false
       end
       if object = (@state.selected_path_object if @state.selected_path_present?)
         @path_label.text = "Path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)}"
@@ -1406,12 +1509,16 @@ module WargameMapToolCrystal
                                "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection, drag an endpoint handle onto a neighboring hex to reshape it, press Delete to remove it, or edit it in the inspector."
                              elsif object = (@state.selected_border_object if @state.selected_border_present?)
                                "Selected border: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click the same edge with the Border tool to reselect it, right-click or press Delete to remove it, or edit width, style, and color in the inspector."
+                             elsif object = (@state.selected_hexside_object if @state.selected_hexside_present?)
+                               "Selected hexside: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click the same edge with the Hexside tool to reselect it, right-click/Delete/Edit-menu removal all work, and the inspector edits width, color, and opacity."
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
                                "Border tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a border, right-click removes the hovered border, and #{border_layer.border_count} borders are currently in the slice."
+                             elsif @state.active_tool == "Hexside" && (hexside_layer = @state.hexside_layer)
+                               "Hexside tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a hexside, right-click removes the hovered hexside, and #{hexside_layer.hexside_count} hexsides are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else
