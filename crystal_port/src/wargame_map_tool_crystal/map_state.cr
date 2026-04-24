@@ -459,6 +459,7 @@ module WargameMapToolCrystal
           json.field "terrain" do
             if terrain = terrain_layer
               json.object do
+                json.field "fill_radius", @fill_radius
                 json.field "accent" do
                   json.object do
                     json.field "red", terrain.accent.red
@@ -561,6 +562,7 @@ module WargameMapToolCrystal
       terrain_data = data["terrain"]?
       if terrain_data && (terrain = terrain_layer)
         terrain.clear_fills
+        @fill_radius = (terrain_data["fill_radius"]?.try(&.as_i?) || 0).to_i32.clamp(0, 3)
 
         if accent_data = terrain_data["accent"]?
           terrain.accent = Qt6::Color.new(
