@@ -10,6 +10,7 @@ module WargameMapToolCrystal
     @drag_asset_object : AssetObject?
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
+    @hovered_path_endpoint : String?
     @drag_mode : String
 
     getter widget : Qt6::EventWidget
@@ -24,6 +25,7 @@ module WargameMapToolCrystal
       @drag_asset_object = nil
       @drag_path_object = nil
       @drag_path_endpoint = nil
+      @hovered_path_endpoint = nil
       @drag_mode = "pan"
       @drag_moved = false
       wire_events
@@ -191,6 +193,7 @@ module WargameMapToolCrystal
       @widget.on_leave do |_event|
         @state.hover_hex = nil
         @state.hover_screen = nil
+        @hovered_path_endpoint = nil
         @hover_callback.call("Hover: outside map")
         refresh
       end
@@ -245,6 +248,7 @@ module WargameMapToolCrystal
         draw_grid_overlay(painter)
         draw_hover(painter)
         draw_pending_path_preview(painter)
+        draw_hovered_path_endpoint(painter)
         draw_hud(painter)
       end
     end
@@ -252,6 +256,11 @@ module WargameMapToolCrystal
     private def update_hover(position : Qt6::PointF) : Nil
       @state.hover_screen = position
       @state.hover_hex = @state.pick_hex(position)
+      @hovered_path_endpoint = nil
+
+      if @state.active_tool == "Path" && @state.pending_path_anchor.nil? && (object = (@state.selected_path_object if @state.selected_path_present?))
+        @hovered_path_endpoint = object.endpoint_hit(@state, position)
+      end
 
       base_message = if hover = @state.hover_hex
                        "Hover: #{@state.hex_label(hover[0], hover[1])}"
@@ -265,6 +274,9 @@ module WargameMapToolCrystal
 
       if object = @state.hovered_path_object
         base_message = "#{base_message} | Path: #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+        if endpoint = @hovered_path_endpoint
+          base_message = "#{base_message} | Drag #{endpoint} handle"
+        end
       elsif @state.active_tool == "Path"
         if anchor = @state.pending_path_anchor
           if hover = @state.hover_hex
@@ -340,6 +352,28 @@ module WargameMapToolCrystal
       painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
       painter.pen = Qt6::Color.new(46, 48, 54)
       painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y + 18.0), @state.active_tool)
+    end
+
+    private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Path"
+      return unless endpoint = @hovered_path_endpoint
+      return unless object = (@state.selected_path_object if @state.selected_path_present?)
+
+      handle_center = case endpoint
+                      when "start"
+                        @state.screen_point(@state.hex_center(object.col_a, object.row_a))
+                      when "end"
+                        @state.screen_point(@state.hex_center(object.col_b, object.row_b))
+                      else
+                        return
+                      end
+
+      painter.save
+      painter.pen = Qt6::QPen.new(Qt6::Color.new(255, 248, 220), 3.0)
+      painter.brush = Qt6::Color.new(224, 168, 64)
+      painter.opacity = 0.95
+      painter.draw_ellipse(Qt6::RectF.new(handle_center.x - 7.0, handle_center.y - 7.0, 14.0, 14.0))
+      painter.restore
     end
 
     private def draw_pending_path_preview(painter : Qt6::QPainter) : Nil
