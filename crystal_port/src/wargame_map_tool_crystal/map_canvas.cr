@@ -400,6 +400,20 @@ module WargameMapToolCrystal
       return unless hover
 
       center = @state.screen_point(@state.hex_center(hover[0], hover[1]))
+      if @state.active_tool == "Fill"
+        preview_color = @state.terrain_layer.try(&.accent) || @state.active_layer.accent
+        polygon = Qt6::QPolygonF.new(
+          @state.hex_points(hover[0], hover[1]).map { |point| @state.screen_point(point) }
+        )
+
+        painter.save
+        painter.pen = Qt6::QPen.new(preview_color, 2.0)
+        painter.brush = preview_color
+        painter.opacity = 0.28
+        painter.draw_polygon(polygon)
+        painter.restore
+      end
+
       painter.pen = Qt6::QPen.new(@state.active_layer.accent, 3.0)
       painter.brush = Qt6::Color.new(0, 0, 0, 0)
       painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
