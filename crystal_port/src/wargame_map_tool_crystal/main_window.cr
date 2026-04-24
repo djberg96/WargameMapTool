@@ -75,6 +75,8 @@ module WargameMapToolCrystal
     @asset_action : Qt6::Action
     @show_layers_action : Qt6::Action
     @show_inspector_action : Qt6::Action
+    @layers_dock : Qt6::DockWidget?
+    @inspector_dock : Qt6::DockWidget?
     @layer_model : Qt6::StandardItemModel
     @layer_tree : Qt6::TreeView
     @layer_selection : Qt6::ItemSelectionModel
@@ -109,6 +111,8 @@ module WargameMapToolCrystal
       @asset_action = Qt6::Action.new("Show Counters", @widget)
       @show_layers_action = Qt6::Action.new("Show Layers", @widget)
       @show_inspector_action = Qt6::Action.new("Show Inspector", @widget)
+      @layers_dock = nil
+      @inspector_dock = nil
       @layer_model = Qt6::StandardItemModel.new(@widget)
       @layer_tree = Qt6::TreeView.new
       @layer_selection = Qt6::ItemSelectionModel.new(@layer_model, @widget)
@@ -427,6 +431,20 @@ module WargameMapToolCrystal
       view_menu << @coords_action
       view_menu << @asset_action
       view_menu.add_separator
+      @show_layers_action.shortcut = "Ctrl+1"
+      @show_layers_action.on_triggered do
+        next unless dock = @layers_dock
+
+        dock.visible = true
+        dock.raise_to_front
+      end
+      @show_inspector_action.shortcut = "Ctrl+2"
+      @show_inspector_action.on_triggered do
+        next unless dock = @inspector_dock
+
+        dock.visible = true
+        dock.raise_to_front
+      end
       view_menu << @show_layers_action
       view_menu << @show_inspector_action
 
@@ -489,8 +507,7 @@ module WargameMapToolCrystal
       dock.minimum_width = 250
       dock.widget = panel
       @widget.add_dock_widget(dock, Qt6::DockArea::Left)
-      @show_layers_action = dock.toggle_view_action
-      @show_layers_action.shortcut = "Ctrl+1"
+      @layers_dock = dock
     end
 
     private def build_inspector_dock : Nil
@@ -677,8 +694,7 @@ module WargameMapToolCrystal
       dock.minimum_width = 320
       dock.widget = panel
       @widget.add_dock_widget(dock, Qt6::DockArea::Right)
-      @show_inspector_action = dock.toggle_view_action
-      @show_inspector_action.shortcut = "Ctrl+2"
+      @inspector_dock = dock
     end
 
     private def refresh_all(message : String) : Nil
