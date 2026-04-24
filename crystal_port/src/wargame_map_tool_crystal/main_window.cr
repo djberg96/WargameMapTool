@@ -84,6 +84,10 @@ module WargameMapToolCrystal
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @text_value_edit : Qt6::LineEdit
+    @text_font_size_spin : Qt6::SpinBox
+    @text_bold_check : Qt6::CheckBox
+    @text_italic_check : Qt6::CheckBox
     @background_offset_x_spin : Qt6::DoubleSpinBox
     @background_offset_y_spin : Qt6::DoubleSpinBox
     @background_scale_spin : Qt6::DoubleSpinBox
@@ -108,6 +112,10 @@ module WargameMapToolCrystal
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @text_value_edit = Qt6::LineEdit.new
+      @text_font_size_spin = Qt6::SpinBox.new
+      @text_bold_check = Qt6::CheckBox.new("Bold")
+      @text_italic_check = Qt6::CheckBox.new("Italic")
       @background_offset_x_spin = Qt6::DoubleSpinBox.new
       @background_offset_y_spin = Qt6::DoubleSpinBox.new
       @background_scale_spin = Qt6::DoubleSpinBox.new
@@ -511,6 +519,42 @@ module WargameMapToolCrystal
         @canvas.refresh("Background scale #{value.round(2)}x")
       end
 
+      @text_value_edit.placeholder_text = "Select a text label"
+      @text_value_edit.on_text_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.text = value
+        @canvas.refresh("Updated text content")
+      end
+
+      @text_font_size_spin.set_range(6, 96)
+      @text_font_size_spin.single_step = 1
+      @text_font_size_spin.suffix = " pt"
+      @text_font_size_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.font_size = value
+        @canvas.refresh("Updated text size")
+      end
+
+      @text_bold_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.bold = checked
+        @canvas.refresh(checked ? "Bold enabled" : "Bold disabled")
+      end
+
+      @text_italic_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless object = (@state.selected_text_object if @state.selected_text_present?)
+
+        object.italic = checked
+        @canvas.refresh(checked ? "Italic enabled" : "Italic disabled")
+      end
+
       summary = Qt6::Label.new("Scope: shell, toolbar, layers, pan/zoom canvas, and PNG export. Remaining Python dialogs and full project serialization are still ahead.")
       background_controls = Qt6::Widget.new
       background_controls.vbox do |column|
@@ -522,6 +566,16 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Scale")
         column << @background_scale_spin
       end
+      text_controls = Qt6::Widget.new
+      text_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Text")
+        column << Qt6::Label.new("Content")
+        column << @text_value_edit
+        column << Qt6::Label.new("Font Size")
+        column << @text_font_size_spin
+        column << @text_bold_check
+        column << @text_italic_check
+      end
 
       panel = Qt6::Widget.new
       panel.vbox do |column|
@@ -530,6 +584,7 @@ module WargameMapToolCrystal
         column << @source_label
         column << @background_label
         column << background_controls
+        column << text_controls
         column << @active_tool_label
         column << @active_layer_label
         column << @hover_label
@@ -588,6 +643,17 @@ module WargameMapToolCrystal
         @background_offset_y_spin.value = layer.offset_y
         @background_scale_spin.value = layer.scale
       end
+      if object = (@state.selected_text_object if @state.selected_text_present?)
+        @text_value_edit.text = object.text
+        @text_font_size_spin.value = object.font_size
+        @text_bold_check.checked = object.bold
+        @text_italic_check.checked = object.italic
+      else
+        @text_value_edit.text = ""
+        @text_font_size_spin.value = 12
+        @text_bold_check.checked = false
+        @text_italic_check.checked = false
+      end
       @active_tool_label.text = "Active tool: #{@state.active_tool}"
       @active_layer_label.text = "Active layer: #{@state.active_layer.name}"
       @hover_label.text = if hover = @state.hover_hex
@@ -597,7 +663,7 @@ module WargameMapToolCrystal
                           end
       @layer_visible_check.checked = @state.active_layer.visible
       @selection_note.text = if object = (@state.selected_text_object if @state.selected_text_present?)
-                               "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection."
+                               "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              else
                                "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
                              end
