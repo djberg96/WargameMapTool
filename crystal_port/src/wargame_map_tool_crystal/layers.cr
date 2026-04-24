@@ -179,6 +179,20 @@ module WargameMapToolCrystal
       Math.sqrt(distance_x * distance_x + distance_y * distance_y)
     end
 
+    def endpoint_hit(state : MapState, point : Qt6::PointF, max_distance : Float64 = 12.0) : String?
+      start_point = state.screen_point(state.hex_center(@col_a, @row_a))
+      end_point = state.screen_point(state.hex_center(@col_b, @row_b))
+
+      start_distance = Math.sqrt((point.x - start_point.x) ** 2 + (point.y - start_point.y) ** 2)
+      end_distance = Math.sqrt((point.x - end_point.x) ** 2 + (point.y - end_point.y) ** 2)
+
+      if start_distance <= max_distance && start_distance <= end_distance
+        "start"
+      elsif end_distance <= max_distance
+        "end"
+      end
+    end
+
     def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
       start_point = state.screen_point(state.hex_center(@col_a, @row_a))
       end_point = state.screen_point(state.hex_center(@col_b, @row_b))
@@ -189,6 +203,10 @@ module WargameMapToolCrystal
       painter.pen = selection_pen
       painter.opacity = 0.9
       painter.draw_line(start_point, end_point)
+      painter.pen = Qt6::QPen.new(accent, 2.0)
+      painter.brush = Qt6::Color.new(250, 248, 242)
+      painter.draw_ellipse(Qt6::RectF.new(start_point.x - 6.0, start_point.y - 6.0, 12.0, 12.0))
+      painter.draw_ellipse(Qt6::RectF.new(end_point.x - 6.0, end_point.y - 6.0, 12.0, 12.0))
       painter.restore
     end
   end

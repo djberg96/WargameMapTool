@@ -8,6 +8,8 @@ module WargameMapToolCrystal
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
     @drag_asset_object : AssetObject?
+    @drag_path_object : PathObject?
+    @drag_path_endpoint : String?
     @drag_mode : String
 
     getter widget : Qt6::EventWidget
@@ -20,6 +22,8 @@ module WargameMapToolCrystal
       @press_pointer = nil
       @drag_text_object = nil
       @drag_asset_object = nil
+      @drag_path_object = nil
+      @drag_path_endpoint = nil
       @drag_mode = "pan"
       @drag_moved = false
       wire_events
@@ -39,6 +43,8 @@ module WargameMapToolCrystal
         @press_pointer = event.position
         @drag_text_object = nil
         @drag_asset_object = nil
+        @drag_path_object = nil
+        @drag_path_endpoint = nil
         @drag_mode = "pan"
         @drag_moved = false
 
@@ -55,6 +61,13 @@ module WargameMapToolCrystal
           if selected && hovered == selected
             @drag_asset_object = selected
             @drag_mode = "asset_move"
+          end
+        elsif @state.active_tool == "Path" && @state.selected_path_present? && @state.pending_path_anchor.nil?
+          selected = @state.selected_path_object
+          if selected && (endpoint = selected.endpoint_hit(@state, event.position))
+            @drag_path_object = selected
+            @drag_path_endpoint = endpoint
+            @drag_mode = "path_endpoint_move"
           end
         end
 
@@ -79,6 +92,22 @@ module WargameMapToolCrystal
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
+            elsif @drag_mode == "path_endpoint_move" && (path_object = @drag_path_object)
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              if hover = @state.hover_hex
+                if @drag_path_endpoint == "start"
+                  unless hover[0] == path_object.col_b && hover[1] == path_object.row_b
+                    path_object.col_a = hover[0]
+                    path_object.row_a = hover[1]
+                  end
+                elsif @drag_path_endpoint == "end"
+                  unless hover[0] == path_object.col_a && hover[1] == path_object.row_a
+                    path_object.col_b = hover[0]
+                    path_object.row_b = hover[1]
+                  end
+                end
+              end
             else
               @state.pan_x += dx
               @state.pan_y += dy
@@ -140,6 +169,10 @@ module WargameMapToolCrystal
               @state.snap_asset_to_hex(object) if object.snap_to_hex
               refresh("Moved asset '#{object.label}'")
             end
+          elsif @drag_moved && @drag_mode == "path_endpoint_move"
+            if object = @drag_path_object
+              refresh("Reshaped path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
+            end
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
@@ -148,6 +181,8 @@ module WargameMapToolCrystal
           @press_pointer = nil
           @drag_text_object = nil
           @drag_asset_object = nil
+          @drag_path_object = nil
+          @drag_path_endpoint = nil
           @drag_mode = "pan"
           @drag_moved = false
         end

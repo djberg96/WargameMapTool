@@ -1180,7 +1180,7 @@ module WargameMapToolCrystal
                                  "Pending path start: #{@state.hex_label(anchor[0], anchor[1])}. Click another hex with the Path tool to finish the segment."
                                end
                              elsif object = (@state.selected_path_object if @state.selected_path_present?)
-                               "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection or edit it in the inspector."
+                               "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection, drag an endpoint handle to reshape it, or edit it in the inspector."
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
