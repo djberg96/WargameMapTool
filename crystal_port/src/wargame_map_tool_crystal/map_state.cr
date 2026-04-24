@@ -119,6 +119,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def asset_layer : AssetLayer?
+      @layers.each do |layer|
+        return layer.as(AssetLayer) if layer.is_a?(AssetLayer)
+      end
+
+      nil
+    end
+
     def text_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(TextLayer)
@@ -218,6 +226,19 @@ module WargameMapToolCrystal
               end
             end
           end
+
+          json.field "asset_objects" do
+            if layer = asset_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
         end
       end)
 
@@ -266,6 +287,20 @@ module WargameMapToolCrystal
         end
       end
 
+      data["asset_objects"]?.try(&.as_a?).try do |objects|
+        if layer = asset_layer
+          layer.clear_assets
+          objects.each do |object_data|
+            asset = AssetObject.from_json(object_data)
+            if image_path = asset.image_path
+              resolved_path = resolve_slice_path(path, image_path)
+              asset.set_image_path(resolved_path)
+            end
+            layer.add_asset(asset)
+          end
+        end
+      end
+
       true
     rescue
       false
@@ -278,12 +313,15 @@ module WargameMapToolCrystal
       text_layer = TextLayer.new("Operational Labels", "Text", true, Qt6::Color.new(66, 78, 118))
       seed_default_text_objects(text_layer)
 
+      asset_layer = AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112))
+      seed_default_asset_objects(asset_layer)
+
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
         TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
         path_layer,
         text_layer,
-        AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
+        asset_layer,
       ] of MapLayer
     end
 
@@ -299,6 +337,18 @@ module WargameMapToolCrystal
       layer.add_text(TextObject.new("Hill 204", hex_center(4, 3).x + 10.0, hex_center(4, 3).y - 10.0, color: layer.accent, bold: true))
       layer.add_text(TextObject.new("Bridge", hex_center(10, 7).x + 10.0, hex_center(10, 7).y - 10.0, color: layer.accent, bold: true))
       layer.add_text(TextObject.new("Depot", hex_center(14, 9).x + 10.0, hex_center(14, 9).y - 10.0, color: layer.accent, bold: true))
+    end
+
+    private def seed_default_asset_objects(layer : AssetLayer) : Nil
+      layer.add_asset(AssetObject.new(hex_center(3, 2).x, hex_center(3, 2).y, bundled_asset_path("tac85_building-summer_a8p5byyix8hy1ge.png"), scale: 0.5))
+      layer.add_asset(AssetObject.new(hex_center(8, 6).x, hex_center(8, 6).y, bundled_asset_path("tac85_building-summer_tw2amtkh0ycpaay.png"), scale: 0.5, rotation: -8.0))
+      layer.add_asset(AssetObject.new(hex_center(12, 4).x, hex_center(12, 4).y, bundled_asset_path("tac85_building-summer_xyyob80co6zekmx.png"), scale: 0.5, rotation: 12.0))
+      layer.add_asset(AssetObject.new(hex_center(15, 9).x, hex_center(15, 9).y, bundled_asset_path("tac85_building-summer_20przpvea1w32mm.png"), scale: 0.5, opacity: 0.95))
+    end
+
+    private def bundled_asset_path(file_name : String) : String?
+      path = File.expand_path("../../assets/assets/tac85/#{file_name}", __DIR__)
+      File.exists?(path) ? path : nil
     end
 
     private def resolve_slice_path(slice_path : String, image_path : String) : String
@@ -415,8 +465,5 @@ module WargameMapToolCrystal
       "#{letter}#{(row + 1).to_s.rjust(2, '0')}"
     end
 
-    def asset_hexes : Array(Tuple(Int32, Int32))
-      [{3, 2}, {8, 6}, {12, 4}, {15, 9}] of Tuple(Int32, Int32)
-    end
   end
 end

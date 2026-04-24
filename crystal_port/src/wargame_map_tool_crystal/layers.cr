@@ -402,19 +402,140 @@ module WargameMapToolCrystal
     end
   end
 
+  class AssetObject
+    @image : Qt6::QImage?
+
+    getter image_path : String?
+    property x : Float64
+    property y : Float64
+    property scale : Float64
+    property rotation : Float64
+    property opacity : Float64
+    property snap_to_hex : Bool
+
+    def initialize(
+      @x : Float64,
+      @y : Float64,
+      image_path : String? = nil,
+      @scale : Float64 = 1.0,
+      @rotation : Float64 = 0.0,
+      @opacity : Float64 = 1.0,
+      @snap_to_hex : Bool = true,
+    )
+      @image = nil
+      @image_path = nil
+      set_image_path(image_path)
+    end
+
+    def set_image_path(path : String?) : Bool
+      if path.nil? || path.not_nil!.empty?
+        @image = nil
+        @image_path = nil
+        return false
+      end
+
+      image = Qt6::QImage.from_file(path.not_nil!)
+      return false if image.null?
+
+      @image = image.convert_to_format(Qt6::ImageFormat::ARGB32)
+      @image_path = path
+      true
+    end
+
+    def has_image? : Bool
+      image = @image
+      !image.nil? && !image.null?
+    end
+
+    def label : String
+      if path = @image_path
+        File.basename(path).sub(/\.[^.]+$/, "")
+      else
+        "Asset"
+      end
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0, accent : Qt6::Color = Qt6::Color.new(94, 100, 112)) : Nil
+      screen = state.screen_point(Qt6::PointF.new(@x, @y))
+      alpha = (layer_opacity * @opacity).clamp(0.0, 1.0)
+      image = @image
+
+      painter.save
+      painter.opacity = alpha
+      painter.translate(screen.x, screen.y)
+      painter.rotate(@rotation) if @rotation != 0.0
+
+      if image && !image.null?
+        painter.smooth_pixmap_transform = true
+        width = image.width * @scale * state.zoom
+        height = image.height * @scale * state.zoom
+        painter.draw_image(Qt6::RectF.new(-width / 2.0, -height / 2.0, width, height), image)
+      else
+        width = 28.0 * @scale.clamp(0.5, 2.4) * state.zoom
+        height = 24.0 * @scale.clamp(0.5, 2.4) * state.zoom
+        rect = Qt6::RectF.new(-width / 2.0, -height / 2.0, width, height)
+        painter.pen = Qt6::QPen.new(Qt6::Color.new(76, 80, 90), 2.0)
+        painter.brush = accent
+        painter.draw_rect(rect)
+        painter.pen = Qt6::Color.new(248, 245, 239)
+        painter.font = Qt6::QFont.new(point_size: (9.0 * state.zoom.clamp(0.8, 1.5)).round.to_i, bold: true)
+        painter.draw_text(Qt6::PointF.new(rect.x + 4.0, rect.y + height / 2.0 + 4.0), label[0, 3].upcase)
+      end
+
+      painter.restore
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "image_path", @image_path if @image_path
+        json.field "x", @x
+        json.field "y", @y
+        json.field "scale", @scale
+        json.field "rotation", @rotation
+        json.field "opacity", @opacity
+        json.field "snap_to_hex", @snap_to_hex
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      new(
+        data["x"]?.try(&.as_f?) || 0.0,
+        data["y"]?.try(&.as_f?) || 0.0,
+        data["image_path"]?.try(&.as_s?),
+        data["scale"]?.try(&.as_f?) || 1.0,
+        data["rotation"]?.try(&.as_f?) || 0.0,
+        data["opacity"]?.try(&.as_f?) || 1.0,
+        data["snap_to_hex"]?.try(&.as_bool?) || true,
+      )
+    end
+  end
+
   class AssetLayer < MapLayer
+    getter objects : Array(AssetObject)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of AssetObject
+    end
+
+    def add_asset(object : AssetObject) : Nil
+      @objects << object
+    end
+
+    def clear_assets : Nil
+      @objects.clear
+    end
+
+    def asset_count : Int32
+      @objects.size.to_i32
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
       return unless state.show_assets
 
-      painter.pen = Qt6::QPen.new(Qt6::Color.new(76, 80, 90), 2.0)
-
-      state.asset_hexes.each_with_index do |hex, index|
-        center = state.screen_point(state.hex_center(hex[0], hex[1]))
-        rect = Qt6::RectF.new(center.x - 14.0, center.y - 12.0, 28.0, 24.0)
-        fill = index.even? ? Qt6::Color.new(224, 214, 190) : Qt6::Color.new(198, 210, 216)
-        painter.fill_rect(rect, fill)
-        painter.draw_rect(rect)
-        painter.draw_text(Qt6::PointF.new(rect.x + 5.0, rect.y + 16.0), "#{index + 1}")
+      layer_opacity = opacity / 100.0
+      @objects.each do |object|
+        object.paint(painter, state, layer_opacity, accent)
       end
     end
   end
