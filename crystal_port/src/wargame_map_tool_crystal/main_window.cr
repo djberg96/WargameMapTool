@@ -201,6 +201,11 @@ module WargameMapToolCrystal
       background_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
       background_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
 
+      asset_image_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
+      asset_image_dialog.window_title = "Replace Asset Image"
+      asset_image_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
+      asset_image_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
+
       new_action = Qt6::Action.new("New Port Slice", @widget)
       new_action.shortcut = "Ctrl+N"
       new_action.on_triggered do
@@ -375,6 +380,55 @@ module WargameMapToolCrystal
         end
       end
 
+      replace_asset_image_action = Qt6::Action.new("Replace Selected Asset Image…", @widget)
+      replace_asset_image_action.on_triggered do
+        object = @state.selected_asset_object if @state.selected_asset_present?
+        unless object
+          handle_status("Select an asset to replace its image")
+          next
+        end
+
+        asset_image_dialog.select_file(object.image_path || File.join(Dir.current, "asset.png"))
+
+        if asset_image_dialog.exec == Qt6::DialogCode::Accepted
+          selected = asset_image_dialog.selected_file
+
+          if !selected.empty? && object.set_image_path(selected)
+            refresh_all("Replaced asset image with #{File.basename(selected)}")
+          else
+            handle_status(selected.empty? ? "Asset image replace canceled" : "Asset image replace failed")
+          end
+        else
+          handle_status("Asset image replace canceled")
+        end
+      end
+
+      delete_asset_action = Qt6::Action.new("Delete Selected Asset…", @widget)
+      delete_asset_action.on_triggered do
+        object = @state.selected_asset_object if @state.selected_asset_present?
+        unless object
+          handle_status("Select an asset to delete it")
+          next
+        end
+
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Asset",
+          text: "Delete '#{object.label}'?",
+          informative_text: "This removes the selected asset from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.asset_layer) && layer.remove_asset(object)
+          @state.clear_asset_selection
+          refresh_all("Deleted asset")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Asset delete failed")
+        end
+      end
+
       quit_action = Qt6::Action.new("Quit", @widget)
       quit_action.shortcut = "Ctrl+Q"
       quit_action.on_triggered do
@@ -433,6 +487,8 @@ module WargameMapToolCrystal
       edit_menu << add_text_action
       edit_menu << edit_text_action
       edit_menu << delete_text_action
+      edit_menu << replace_asset_image_action
+      edit_menu << delete_asset_action
 
       view_menu << reset_view_action
       view_menu << @grid_action
