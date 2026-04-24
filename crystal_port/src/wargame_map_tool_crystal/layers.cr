@@ -160,6 +160,37 @@ module WargameMapToolCrystal
         data["opacity"]?.try(&.as_f?) || 1.0,
       )
     end
+
+    def screen_distance_to(state : MapState, point : Qt6::PointF) : Float64
+      start_point = state.screen_point(state.hex_center(@col_a, @row_a))
+      end_point = state.screen_point(state.hex_center(@col_b, @row_b))
+      dx = end_point.x - start_point.x
+      dy = end_point.y - start_point.y
+      length_squared = dx * dx + dy * dy
+
+      return Math.sqrt((point.x - start_point.x) ** 2 + (point.y - start_point.y) ** 2) if length_squared <= 0.001
+
+      t = (((point.x - start_point.x) * dx) + ((point.y - start_point.y) * dy)) / length_squared
+      t = t.clamp(0.0, 1.0)
+      projection_x = start_point.x + dx * t
+      projection_y = start_point.y + dy * t
+      distance_x = point.x - projection_x
+      distance_y = point.y - projection_y
+      Math.sqrt(distance_x * distance_x + distance_y * distance_y)
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      start_point = state.screen_point(state.hex_center(@col_a, @row_a))
+      end_point = state.screen_point(state.hex_center(@col_b, @row_b))
+      selection_pen = Qt6::QPen.new(accent, @width + 4.0)
+      selection_pen.style = Qt6::PenStyle::DashLine
+
+      painter.save
+      painter.pen = selection_pen
+      painter.opacity = 0.9
+      painter.draw_line(start_point, end_point)
+      painter.restore
+    end
   end
 
   class PathLayer < MapLayer
@@ -180,6 +211,29 @@ module WargameMapToolCrystal
 
     def path_count : Int32
       @objects.size.to_i32
+    end
+
+    def remove_path(object : PathObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
+    def nearest_path(state : MapState, screen_point : Qt6::PointF, max_distance : Float64 = 10.0) : PathObject?
+      best = nil
+      best_distance = max_distance
+
+      @objects.each do |object|
+        distance = object.screen_distance_to(state, screen_point)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = object
+      end
+
+      best
     end
 
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
@@ -204,6 +258,12 @@ module WargameMapToolCrystal
         painter.opacity = (layer_opacity * object.opacity).clamp(0.0, 1.0)
         painter.draw_line(start_point, end_point)
         painter.restore
+      end
+
+      if selected = state.selected_path_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
       end
     end
   end

@@ -85,11 +85,15 @@ module WargameMapToolCrystal
     @project_label : Qt6::Label
     @source_label : Qt6::Label
     @background_label : Qt6::Label
+    @path_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @path_width_spin : Qt6::DoubleSpinBox
+    @path_line_type_combo : Qt6::ComboBox
+    @path_opacity_spin : Qt6::DoubleSpinBox
     @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
     @asset_rotation_spin : Qt6::DoubleSpinBox
@@ -127,11 +131,15 @@ module WargameMapToolCrystal
       @project_label = Qt6::Label.new
       @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
+      @path_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @path_width_spin = Qt6::DoubleSpinBox.new
+      @path_line_type_combo = Qt6::ComboBox.new
+      @path_opacity_spin = Qt6::DoubleSpinBox.new
       @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
       @asset_rotation_spin = Qt6::DoubleSpinBox.new
@@ -686,6 +694,47 @@ module WargameMapToolCrystal
         @canvas.refresh("Background scale #{value.round(2)}x")
       end
 
+      @path_width_spin.set_range(1.0, 12.0)
+      @path_width_spin.decimals = 1
+      @path_width_spin.single_step = 0.5
+      @path_width_spin.suffix = " px"
+      @path_width_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_path_object if @state.selected_path_present?)
+
+        object.width = value
+        @canvas.refresh("Updated path width")
+      end
+
+      @path_line_type_combo << "Solid"
+      @path_line_type_combo << "Dashed"
+      @path_line_type_combo << "Dotted"
+      @path_line_type_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless object = (@state.selected_path_object if @state.selected_path_present?)
+
+        object.line_type = case index
+                           when 1
+                             "dashed"
+                           when 2
+                             "dotted"
+                           else
+                             "solid"
+                           end
+        @canvas.refresh("Updated path style")
+      end
+
+      @path_opacity_spin.set_range(0.0, 1.0)
+      @path_opacity_spin.decimals = 2
+      @path_opacity_spin.single_step = 0.05
+      @path_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_path_object if @state.selected_path_present?)
+
+        object.opacity = value
+        @canvas.refresh("Updated path opacity")
+      end
+
       @asset_scale_spin.set_range(0.1, 4.0)
       @asset_scale_spin.decimals = 2
       @asset_scale_spin.single_step = 0.05
@@ -830,6 +879,17 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Scale")
         column << @background_scale_spin
       end
+      path_controls = Qt6::Widget.new
+      path_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Path")
+        column << @path_label
+        column << Qt6::Label.new("Width")
+        column << @path_width_spin
+        column << Qt6::Label.new("Line Style")
+        column << @path_line_type_combo
+        column << Qt6::Label.new("Opacity")
+        column << @path_opacity_spin
+      end
       asset_controls = Qt6::Widget.new
       asset_controls.vbox do |column|
         column << Qt6::Label.new("Selected Asset")
@@ -870,6 +930,7 @@ module WargameMapToolCrystal
         column << @source_label
         column << @background_label
         column << background_controls
+        column << path_controls
         column << asset_controls
         column << text_controls
         column << @active_tool_label
@@ -931,6 +992,30 @@ module WargameMapToolCrystal
         @background_offset_x_spin.value = layer.offset_x
         @background_offset_y_spin.value = layer.offset_y
         @background_scale_spin.value = layer.scale
+      end
+      if object = (@state.selected_path_object if @state.selected_path_present?)
+        @path_label.text = "Path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)}"
+        @path_width_spin.value = object.width
+        @path_line_type_combo.current_index = case object.line_type
+                                              when "dashed"
+                                                1
+                                              when "dotted"
+                                                2
+                                              else
+                                                0
+                                              end
+        @path_opacity_spin.value = object.opacity
+        @path_width_spin.enabled = true
+        @path_line_type_combo.enabled = true
+        @path_opacity_spin.enabled = true
+      else
+        @path_label.text = "Path: none selected"
+        @path_width_spin.value = 3.0
+        @path_line_type_combo.current_index = 0
+        @path_opacity_spin.value = 1.0
+        @path_width_spin.enabled = false
+        @path_line_type_combo.enabled = false
+        @path_opacity_spin.enabled = false
       end
       if object = (@state.selected_asset_object if @state.selected_asset_present?)
         @asset_label.text = if path = object.image_path
@@ -1017,7 +1102,9 @@ module WargameMapToolCrystal
                             "Hover: outside map"
                           end
       @layer_visible_check.checked = @state.active_layer.visible
-      @selection_note.text = if object = (@state.selected_asset_object if @state.selected_asset_present?)
+      @selection_note.text = if object = (@state.selected_path_object if @state.selected_path_present?)
+                               "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection or edit it in the inspector."
+                             elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."

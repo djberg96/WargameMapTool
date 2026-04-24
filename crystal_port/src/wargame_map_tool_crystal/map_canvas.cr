@@ -102,6 +102,13 @@ module WargameMapToolCrystal
               @state.clear_text_selection
               refresh("Cleared text selection")
             end
+          elsif !@drag_moved && @state.active_tool == "Path"
+            if object = @state.select_hovered_path
+              refresh("Selected path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
+            else
+              @state.clear_path_selection
+              refresh("Cleared path selection")
+            end
           elsif !@drag_moved && @state.active_tool == "Asset"
             if object = @state.select_hovered_asset
               refresh("Selected asset '#{object.label}'")
@@ -183,6 +190,10 @@ module WargameMapToolCrystal
 
       if object = @state.hovered_text_object
         base_message = "#{base_message} | Text: #{object.text}"
+      end
+
+      if object = @state.hovered_path_object
+        base_message = "#{base_message} | Path: #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
       end
 
       if object = @state.hovered_asset_object

@@ -22,6 +22,7 @@ module WargameMapToolCrystal
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
+    property selected_path_object : PathObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
     getter layers : Array(MapLayer)
@@ -44,6 +45,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -67,6 +69,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -161,6 +164,7 @@ module WargameMapToolCrystal
 
       object = TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true)
       layer.add_text(object)
+      @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
       true
@@ -185,9 +189,22 @@ module WargameMapToolCrystal
       snap_asset_to_hex(object) if object.snap_to_hex
 
       layer.add_asset(object)
+      @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       true
+    end
+
+    def selected_path_present? : Bool
+      object = @selected_path_object
+      layer = path_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_path_selection : Nil
+      @selected_path_object = nil
     end
 
     def duplicate_selected_asset : AssetObject?
@@ -253,6 +270,7 @@ module WargameMapToolCrystal
 
     def select_hovered_text : TextObject?
       object = hovered_text_object
+      @selected_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
       object
@@ -268,9 +286,26 @@ module WargameMapToolCrystal
 
     def select_hovered_asset : AssetObject?
       object = hovered_asset_object
+      @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
+    end
+
+    def select_hovered_path : PathObject?
+      object = hovered_path_object
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @selected_path_object = object
+      object
+    end
+
+    def hovered_path_object : PathObject?
+      screen = @hover_screen
+      layer = path_layer
+      return nil unless screen && layer
+
+      layer.nearest_path(self, screen)
     end
 
     def hovered_asset_object : AssetObject?
@@ -379,6 +414,7 @@ module WargameMapToolCrystal
       end
 
       text_layer.try(&.clear_texts)
+      @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       data["text_objects"]?.try(&.as_a?).try do |objects|
