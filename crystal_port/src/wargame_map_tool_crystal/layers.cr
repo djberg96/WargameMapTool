@@ -855,6 +855,12 @@ module WargameMapToolCrystal
       best_index
     end
 
+    def translate(delta_x : Float64, delta_y : Float64) : Nil
+      @points.map! do |point|
+        {point[0] + delta_x, point[1] + delta_y}
+      end
+    end
+
     private def build_screen_points(state : MapState) : Array(Qt6::PointF)
       @points.map { |point| state.screen_point(Qt6::PointF.new(point[0], point[1])) }
     end

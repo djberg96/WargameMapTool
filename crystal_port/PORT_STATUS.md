@@ -23,7 +23,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - object-backed border layer with edge hover feedback, click-to-place/select interaction, right-click/Delete/Edit-menu removal, inspector-based width/color/line-style editing, and Crystal slice JSON persistence
 - object-backed hexside layer with edge hover feedback, click-to-place/select interaction, left-drag placement, right-drag/Delete/Edit-menu removal, inspector-based width/color/opacity editing, and Crystal slice JSON persistence
 - object-backed path layer with explicit Path-tool selection, neighboring-hex-constrained two-click path creation, preview feedback, neighboring-hex-constrained endpoint hover/drag reshaping feedback, keyboard delete/cancel support, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
-- object-backed freeform path layer with world-space drag drawing, click-to-select interaction, visible control-point handles with direct point dragging on the selected stroke, right-click/Delete/Edit-menu removal, a live draw preview, inspector-based width/color/opacity editing, and Crystal slice JSON persistence
+- object-backed freeform path layer with world-space drag drawing, click-to-select interaction, visible control-point handles with direct point dragging on the selected stroke, whole-stroke dragging when the selected path body is dragged, right-click/Delete/Edit-menu removal, a live draw preview, inspector-based width/color/opacity editing, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
 - explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/reset/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility
 - object-backed text layer with renderable text objects instead of hard-coded label tuples
@@ -49,7 +49,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - fill-layer editing parity beyond a single active fill color with preset swatches, adjustable radius, and a clear-all action, per-hex color paint/erase, and broader brush-setting persistence
 - border-layer editing parity beyond straight edge placement/selection/removal, simple style editing, and slice-state persistence
 - hexside-layer editing parity beyond straight shared-edge click-or-drag placement/selection/removal, simple width/color/opacity editing, and slice-state persistence
-- freeform-path editing parity beyond basic world-space drag drawing, control-point reshaping, selection/removal, simple width/color/opacity editing, and slice-state persistence
+- freeform-path editing parity beyond basic world-space drag drawing, control-point reshaping, whole-stroke dragging, selection/removal, simple width/color/opacity editing, and slice-state persistence
 - text-layer editing parity beyond basic selection, move, inspector editing of core object properties, add/edit/delete, and slice-state persistence
 - the advanced paint, fill, border, hexside, and text tool behaviors
 - SVG/PDF export parity with the Python app
