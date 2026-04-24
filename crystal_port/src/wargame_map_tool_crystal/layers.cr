@@ -724,6 +724,8 @@ module WargameMapToolCrystal
   end
 
   class FreeformPathObject
+    HANDLE_HIT_DISTANCE = 12.0
+
     property points : Array(Tuple(Float64, Float64))
     property color : Qt6::Color
     property width : Float64
@@ -830,9 +832,27 @@ module WargameMapToolCrystal
       draw_screen_segments(painter, screen_points)
       painter.pen = Qt6::QPen.new(accent, 2.0)
       painter.brush = Qt6::Color.new(250, 248, 242)
-      painter.draw_ellipse(Qt6::RectF.new(screen_points.first.x - 5.0, screen_points.first.y - 5.0, 10.0, 10.0))
-      painter.draw_ellipse(Qt6::RectF.new(screen_points.last.x - 5.0, screen_points.last.y - 5.0, 10.0, 10.0))
+      screen_points.each do |screen_point|
+        painter.draw_ellipse(Qt6::RectF.new(screen_point.x - 5.0, screen_point.y - 5.0, 10.0, 10.0))
+      end
       painter.restore
+    end
+
+    def point_hit_index(state : MapState, screen_point : Qt6::PointF, max_distance : Float64 = HANDLE_HIT_DISTANCE) : Int32?
+      best_index = nil
+      best_distance = max_distance
+
+      build_screen_points(state).each_with_index do |path_point, index|
+        dx = screen_point.x - path_point.x
+        dy = screen_point.y - path_point.y
+        distance = Math.sqrt(dx * dx + dy * dy)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best_index = index.to_i32
+      end
+
+      best_index
     end
 
     private def build_screen_points(state : MapState) : Array(Qt6::PointF)

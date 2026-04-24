@@ -11,6 +11,8 @@ module WargameMapToolCrystal
     @drag_asset_object : AssetObject?
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
+    @drag_freeform_path_object : FreeformPathObject?
+    @drag_freeform_point_index : Int32?
     @hovered_border_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_hexside_edge : Tuple(Int32, Int32, Int32, Int32)?
     @last_hexside_drag_edge : Tuple(Int32, Int32, Int32, Int32)?
@@ -32,6 +34,8 @@ module WargameMapToolCrystal
       @drag_asset_object = nil
       @drag_path_object = nil
       @drag_path_endpoint = nil
+      @drag_freeform_path_object = nil
+      @drag_freeform_point_index = nil
       @hovered_border_edge = nil
       @hovered_hexside_edge = nil
       @last_hexside_drag_edge = nil
@@ -60,6 +64,8 @@ module WargameMapToolCrystal
         @drag_asset_object = nil
         @drag_path_object = nil
         @drag_path_endpoint = nil
+        @drag_freeform_path_object = nil
+        @drag_freeform_point_index = nil
         @hovered_border_edge = nil
         @hovered_hexside_edge = nil
         @last_hexside_drag_edge = nil
@@ -163,6 +169,13 @@ module WargameMapToolCrystal
             @drag_path_endpoint = endpoint
             @drag_mode = "path_endpoint_move"
           end
+        elsif !handled_press && @state.active_tool == "Freeform" && @state.selected_freeform_path_present?
+          selected = @state.selected_freeform_path_object
+          if selected && (point_index = selected.point_hit_index(@state, event.position))
+            @drag_freeform_path_object = selected
+            @drag_freeform_point_index = point_index
+            @drag_mode = "freeform_point_move"
+          end
         end
 
         @widget.set_focus
@@ -231,6 +244,15 @@ module WargameMapToolCrystal
                     path_object.col_b = hover[0]
                     path_object.row_b = hover[1]
                   end
+                end
+              end
+            elsif @drag_mode == "freeform_point_move"
+              if (freeform_object = @drag_freeform_path_object) && (point_index = @drag_freeform_point_index)
+                if point_index >= 0 && point_index < freeform_object.points.size
+                  world = @state.screen_to_world(event.position)
+                  freeform_object.points[point_index] = {world.x.to_f64, world.y.to_f64}
+                  @state.hover_screen = event.position
+                  @state.hover_hex = @state.pick_hex(event.position)
                 end
               end
             else
@@ -384,6 +406,10 @@ module WargameMapToolCrystal
             if object = @drag_path_object
               refresh("Reshaped path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
             end
+          elsif @drag_moved && @drag_mode == "freeform_point_move"
+            if object = @drag_freeform_path_object
+              refresh("Moved freeform control point (#{object.point_count} points)")
+            end
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
@@ -394,6 +420,8 @@ module WargameMapToolCrystal
           @drag_asset_object = nil
           @drag_path_object = nil
           @drag_path_endpoint = nil
+          @drag_freeform_path_object = nil
+          @drag_freeform_point_index = nil
           @freeform_draw_points.clear
           @fill_drag_count = 0
           @hexside_drag_count = 0
