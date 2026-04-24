@@ -93,6 +93,7 @@ module WargameMapToolCrystal
     @selection_note : Qt6::Label
     @path_width_spin : Qt6::DoubleSpinBox
     @path_line_type_combo : Qt6::ComboBox
+    @path_color_button : Qt6::PushButton
     @path_opacity_spin : Qt6::DoubleSpinBox
     @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
@@ -139,6 +140,7 @@ module WargameMapToolCrystal
       @selection_note = Qt6::Label.new
       @path_width_spin = Qt6::DoubleSpinBox.new
       @path_line_type_combo = Qt6::ComboBox.new
+      @path_color_button = Qt6::PushButton.new("Path Color")
       @path_opacity_spin = Qt6::DoubleSpinBox.new
       @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
@@ -771,6 +773,18 @@ module WargameMapToolCrystal
         @canvas.refresh("Updated path style")
       end
 
+      @path_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_path_object if @state.selected_path_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.color, title: "Select Path Color")
+        next unless color
+
+        object.color = color
+        @path_color_button.text = color_button_text(color)
+        @canvas.refresh("Updated path color")
+      end
+
       @path_opacity_spin.set_range(0.0, 1.0)
       @path_opacity_spin.decimals = 2
       @path_opacity_spin.single_step = 0.05
@@ -934,6 +948,7 @@ module WargameMapToolCrystal
         column << @path_width_spin
         column << Qt6::Label.new("Line Style")
         column << @path_line_type_combo
+        column << @path_color_button
         column << Qt6::Label.new("Opacity")
         column << @path_opacity_spin
       end
@@ -1051,17 +1066,21 @@ module WargameMapToolCrystal
                                               else
                                                 0
                                               end
+        @path_color_button.text = color_button_text(object.color)
         @path_opacity_spin.value = object.opacity
         @path_width_spin.enabled = true
         @path_line_type_combo.enabled = true
+        @path_color_button.enabled = true
         @path_opacity_spin.enabled = true
       else
         @path_label.text = "Path: none selected"
         @path_width_spin.value = 3.0
         @path_line_type_combo.current_index = 0
+        @path_color_button.text = "Path Color"
         @path_opacity_spin.value = 1.0
         @path_width_spin.enabled = false
         @path_line_type_combo.enabled = false
+        @path_color_button.enabled = false
         @path_opacity_spin.enabled = false
       end
       if object = (@state.selected_asset_object if @state.selected_asset_present?)
