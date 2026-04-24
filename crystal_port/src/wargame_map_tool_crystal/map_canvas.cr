@@ -12,8 +12,10 @@ module WargameMapToolCrystal
     @drag_path_endpoint : String?
     @hovered_border_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_hexside_edge : Tuple(Int32, Int32, Int32, Int32)?
+    @last_hexside_drag_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_path_endpoint : String?
     @fill_drag_count : Int32
+    @hexside_drag_count : Int32
     @drag_mode : String
 
     getter widget : Qt6::EventWidget
@@ -30,8 +32,10 @@ module WargameMapToolCrystal
       @drag_path_endpoint = nil
       @hovered_border_edge = nil
       @hovered_hexside_edge = nil
+      @last_hexside_drag_edge = nil
       @hovered_path_endpoint = nil
       @fill_drag_count = 0
+      @hexside_drag_count = 0
       @drag_mode = "pan"
       @drag_moved = false
       wire_events
@@ -55,7 +59,9 @@ module WargameMapToolCrystal
         @drag_path_endpoint = nil
         @hovered_border_edge = nil
         @hovered_hexside_edge = nil
+        @last_hexside_drag_edge = nil
         @fill_drag_count = 0
+        @hexside_drag_count = 0
         @drag_mode = "pan"
         @drag_moved = false
 
@@ -85,18 +91,18 @@ module WargameMapToolCrystal
           @state.hover_hex = @state.pick_hex(event.position)
           update_hovered_hexside_edge(event.position)
 
-          if event.button == 2
+          if event.button == 1
             if edge = @hovered_hexside_edge
-              if object = hexside_object_for_edge(edge)
-                if (layer = @state.hexside_layer) && layer.remove_hexside(object)
-                  @state.clear_hexside_selection if @state.selected_hexside_object == object
-                  refresh("Removed hexside #{edge_label(edge)}")
-                  @state.dragging = false
-                  @press_pointer = nil
-                  @drag_mode = "hexside_remove"
-                  handled_press = true
-                end
+              unless hexside_object_for_edge(edge)
+                @hexside_drag_count = paint_hexside(edge)
+                @drag_mode = "hexside_paint"
               end
+            end
+          elsif event.button == 2
+            if edge = @hovered_hexside_edge
+              @hexside_drag_count = clear_hexside(edge)
+              @drag_mode = "hexside_erase"
+              handled_press = @hexside_drag_count > 0
             end
           end
         end
@@ -165,6 +171,20 @@ module WargameMapToolCrystal
               if hover = @state.hover_hex
                 @fill_drag_count += clear_fill(hover)
               end
+            elsif @drag_mode == "hexside_paint"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              update_hovered_hexside_edge(event.position)
+              if edge = @hovered_hexside_edge
+                @hexside_drag_count += paint_hexside(edge)
+              end
+            elsif @drag_mode == "hexside_erase"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              update_hovered_hexside_edge(event.position)
+              if edge = @hovered_hexside_edge
+                @hexside_drag_count += clear_hexside(edge)
+              end
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
@@ -216,6 +236,22 @@ module WargameMapToolCrystal
                       "terrain"
                     end
             refresh(count <= 1 ? "Cleared fill #{label}" : "Cleared #{count} fills")
+          elsif @drag_mode == "hexside_paint"
+            count = @hexside_drag_count
+            label = if edge = @last_hexside_drag_edge
+                      edge_label(edge)
+                    else
+                      "hexside"
+                    end
+            refresh(count <= 1 ? "Created hexside #{label}" : "Created #{count} hexsides")
+          elsif @drag_mode == "hexside_erase"
+            count = @hexside_drag_count
+            label = if edge = @last_hexside_drag_edge
+                      edge_label(edge)
+                    else
+                      "hexside"
+                    end
+            refresh(count <= 1 ? "Removed hexside #{label}" : "Removed #{count} hexsides")
           elsif !@drag_moved && @state.active_tool == "Text"
             if object = @state.select_hovered_text
               refresh("Selected text '#{object.text}'")
@@ -315,6 +351,8 @@ module WargameMapToolCrystal
           @drag_path_object = nil
           @drag_path_endpoint = nil
           @fill_drag_count = 0
+          @hexside_drag_count = 0
+          @last_hexside_drag_edge = nil
           @drag_mode = "pan"
           @drag_moved = false
         end
@@ -570,6 +608,27 @@ module WargameMapToolCrystal
         changed += 1 if layer.clear_fill(coords[0], coords[1])
       end
       changed
+    end
+
+    private def paint_hexside(edge : Tuple(Int32, Int32, Int32, Int32)) : Int32
+      object = @state.create_hexside(edge[0], edge[1], edge[2], edge[3])
+      return 0 unless object
+
+      @last_hexside_drag_edge = object.edge_key
+      1
+    end
+
+    private def clear_hexside(edge : Tuple(Int32, Int32, Int32, Int32)) : Int32
+      object = hexside_object_for_edge(edge)
+      layer = @state.hexside_layer
+      return 0 unless object && layer
+
+      removed = layer.remove_hexside(object)
+      return 0 unless removed
+
+      @state.clear_hexside_selection if @state.selected_hexside_object == object
+      @last_hexside_drag_edge = edge
+      1
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil
