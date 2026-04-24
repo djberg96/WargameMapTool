@@ -147,16 +147,7 @@ module WargameMapToolCrystal
     def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0) : Nil
       return if @text.empty?
 
-      font = Qt6::QFont.new(@font_family, @font_size, @bold, @italic)
-      metrics = font.metrics_f
-      x_offset = case @alignment
-                 when "center"
-                   -metrics.horizontal_advance(@text) / 2.0
-                 when "right"
-                   -metrics.horizontal_advance(@text)
-                 else
-                   0.0
-                 end
+      font = make_font
       screen = state.screen_point(Qt6::PointF.new(@x, @y))
 
       painter.save
@@ -165,8 +156,50 @@ module WargameMapToolCrystal
       painter.opacity = (layer_opacity * @opacity).clamp(0.0, 1.0)
       painter.translate(screen.x, screen.y)
       painter.rotate(@rotation) if @rotation != 0.0
-      painter.draw_text(Qt6::PointF.new(x_offset, 0.0), @text)
+      painter.draw_text(Qt6::PointF.new(text_x_offset, 0.0), @text)
       painter.restore
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      return if @text.empty?
+
+      screen = state.screen_point(Qt6::PointF.new(@x, @y))
+      selection_pen = Qt6::QPen.new(accent, 2.0)
+      selection_pen.style = Qt6::PenStyle::DashLine
+
+      painter.save
+      painter.pen = selection_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.translate(screen.x, screen.y)
+      painter.rotate(@rotation) if @rotation != 0.0
+      painter.draw_rect(selection_rect)
+      painter.restore
+    end
+
+    private def make_font : Qt6::QFont
+      Qt6::QFont.new(@font_family, @font_size, @bold, @italic)
+    end
+
+    private def text_x_offset : Float64
+      metrics = make_font.metrics_f
+      case @alignment
+      when "center"
+        -metrics.horizontal_advance(@text) / 2.0
+      when "right"
+        -metrics.horizontal_advance(@text)
+      else
+        0.0
+      end
+    end
+
+    private def selection_rect : Qt6::RectF
+      metrics = make_font.metrics_f
+      padding = 4.0
+      x = text_x_offset - padding
+      y = -metrics.ascent - padding
+      width = metrics.horizontal_advance(@text) + padding * 2.0
+      height = metrics.height + padding * 2.0
+      Qt6::RectF.new(x, y, width, height)
     end
 
     def write_json(json : JSON::Builder) : Nil
@@ -267,6 +300,12 @@ module WargameMapToolCrystal
       layer_opacity = opacity / 100.0
       @objects.each do |object|
         object.paint(painter, state, layer_opacity)
+      end
+
+      if selected = state.selected_text_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
       end
     end
   end

@@ -23,6 +23,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - add-text action plus Crystal slice JSON persistence for text objects
 - basic hovered-text edit/delete actions with hover feedback in the inspector
 - explicit text selection via canvas clicks when the Text tool is active, with selected-text edit/delete actions
+- visible dashed selection highlight around the currently selected text object
 - custom map canvas with pan/zoom, hover, labels, route overlay, and counter overlay
 - renderable Crystal layer seam with a real layer list feeding the canvas paint loop
 - source-map selection stub and PNG export
