@@ -99,12 +99,12 @@ module WargameMapToolCrystal
               @state.hover_hex = @state.pick_hex(event.position)
               if hover = @state.hover_hex
                 if @drag_path_endpoint == "start"
-                  unless hover[0] == path_object.col_b && hover[1] == path_object.row_b
+                  if @state.neighboring_hexes?(hover[0], hover[1], path_object.col_b, path_object.row_b)
                     path_object.col_a = hover[0]
                     path_object.row_a = hover[1]
                   end
                 elsif @drag_path_endpoint == "end"
-                  unless hover[0] == path_object.col_a && hover[1] == path_object.row_a
+                  if @state.neighboring_hexes?(path_object.col_a, path_object.row_a, hover[0], hover[1])
                     path_object.col_b = hover[0]
                     path_object.row_b = hover[1]
                   end
@@ -141,6 +141,8 @@ module WargameMapToolCrystal
                 if anchor == hover
                   @state.clear_pending_path_anchor
                   refresh("Canceled pending path at #{@state.hex_label(anchor[0], anchor[1])}")
+                elsif !@state.neighboring_hexes?(anchor[0], anchor[1], hover[0], hover[1])
+                  refresh("Choose a neighboring hex from #{@state.hex_label(anchor[0], anchor[1])}")
                 elsif object = @state.create_path_from_pending(hover)
                   refresh("Created path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
                 else
@@ -281,7 +283,11 @@ module WargameMapToolCrystal
         if anchor = @state.pending_path_anchor
           if hover = @state.hover_hex
             if anchor != hover
-              base_message = "#{base_message} | New Path: #{@state.hex_label(anchor[0], anchor[1])}-#{@state.hex_label(hover[0], hover[1])}"
+              if @state.neighboring_hexes?(anchor[0], anchor[1], hover[0], hover[1])
+                base_message = "#{base_message} | New Path: #{@state.hex_label(anchor[0], anchor[1])}-#{@state.hex_label(hover[0], hover[1])}"
+              else
+                base_message = "#{base_message} | Choose a neighboring hex from #{@state.hex_label(anchor[0], anchor[1])}"
+              end
             else
               base_message = "#{base_message} | Click again to cancel path start"
             end
@@ -390,21 +396,23 @@ module WargameMapToolCrystal
 
       if hover = @state.hover_hex
         unless hover == anchor
-          style_source = @state.selected_path_object if @state.selected_path_present?
-          pen = Qt6::QPen.new(style_source ? style_source.color : @state.active_layer.accent, style_source ? style_source.width : 3.0)
-          pen.style = case style_source.try(&.line_type)
-                      when "dashed"
-                        Qt6::PenStyle::DashLine
-                      when "dotted"
-                        Qt6::PenStyle::DotLine
-                      else
-                        Qt6::PenStyle::DashLine
-                      end
+          if @state.neighboring_hexes?(anchor[0], anchor[1], hover[0], hover[1])
+            style_source = @state.selected_path_object if @state.selected_path_present?
+            pen = Qt6::QPen.new(style_source ? style_source.color : @state.active_layer.accent, style_source ? style_source.width : 3.0)
+            pen.style = case style_source.try(&.line_type)
+                        when "dashed"
+                          Qt6::PenStyle::DashLine
+                        when "dotted"
+                          Qt6::PenStyle::DotLine
+                        else
+                          Qt6::PenStyle::DashLine
+                        end
 
-          end_point = @state.screen_point(@state.hex_center(hover[0], hover[1]))
-          painter.pen = pen
-          painter.opacity = style_source ? style_source.opacity.clamp(0.0, 1.0) : 0.75
-          painter.draw_line(start_point, end_point)
+            end_point = @state.screen_point(@state.hex_center(hover[0], hover[1]))
+            painter.pen = pen
+            painter.opacity = style_source ? style_source.opacity.clamp(0.0, 1.0) : 0.75
+            painter.draw_line(start_point, end_point)
+          end
         end
       end
 

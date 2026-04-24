@@ -235,6 +235,7 @@ module WargameMapToolCrystal
       layer = path_layer
       return nil unless anchor && layer
       return nil if anchor == target
+      return nil unless neighboring_hexes?(anchor[0], anchor[1], target[0], target[1])
 
       activate_path_layer
       style_source = selected_path_present? ? @selected_path_object : nil
@@ -723,6 +724,20 @@ module WargameMapToolCrystal
       end
 
       best
+    end
+
+    def neighboring_hexes?(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : Bool
+      return false unless valid_hex_coord?(col_a, row_a) && valid_hex_coord?(col_b, row_b)
+
+      q_a = col_a - ((row_a - (row_a & 1)) // 2)
+      r_a = row_a
+      s_a = -q_a - r_a
+
+      q_b = col_b - ((row_b - (row_b & 1)) // 2)
+      r_b = row_b
+      s_b = -q_b - r_b
+
+      ((q_a - q_b).abs + (r_a - r_b).abs + (s_a - s_b).abs) // 2 == 1
     end
 
     private def valid_hex_coord?(col : Int32, row : Int32) : Bool
