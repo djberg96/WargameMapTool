@@ -19,7 +19,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - importable background image layer with offset/scale-backed rendering
 - inspector controls for background offset and scale
 - Crystal slice JSON save/load for background image state and transform
-- minimal terrain fill workflow with per-hex color overrides, translucent hover preview, left-drag paint, right-drag clear, inspector fill color control, and Crystal slice JSON persistence
+- minimal terrain fill workflow with per-hex color overrides, translucent hover preview, left-drag paint, right-drag clear, inspector fill color control plus preset swatches, and Crystal slice JSON persistence
 - object-backed path layer with explicit Path-tool selection, neighboring-hex-constrained two-click path creation, preview feedback, neighboring-hex-constrained endpoint hover/drag reshaping feedback, keyboard delete/cancel support, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
 - explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/reset/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility
@@ -43,7 +43,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - asset libraries, texture libraries, palette editors, and manager dialogs
 - asset-layer editing parity beyond basic create/duplicate/select/move/replace/reset/delete actions, snap-to-hex editing, inspector editing of core object properties, fallback rendering, and slice-state persistence
 - background-layer editing parity beyond basic image import, transform, and slice-state persistence
-- fill-layer editing parity beyond a single active fill color, per-hex color paint/erase, and slice-state persistence
+- fill-layer editing parity beyond a single active fill color with preset swatches, per-hex color paint/erase, and slice-state persistence
 - text-layer editing parity beyond basic selection, move, inspector editing of core object properties, add/edit/delete, and slice-state persistence
 - the advanced paint, fill, border, hexside, and text tool behaviors
 - SVG/PDF export parity with the Python app

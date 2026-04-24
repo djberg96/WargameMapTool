@@ -112,6 +112,7 @@ module WargameMapToolCrystal
     @background_offset_y_spin : Qt6::DoubleSpinBox
     @background_scale_spin : Qt6::DoubleSpinBox
     @terrain_color_button : Qt6::PushButton
+    @terrain_preset_buttons : Array(Qt6::PushButton)
     @updating_panel : Bool
 
     def initialize
@@ -161,6 +162,7 @@ module WargameMapToolCrystal
       @background_offset_y_spin = Qt6::DoubleSpinBox.new
       @background_scale_spin = Qt6::DoubleSpinBox.new
       @terrain_color_button = Qt6::PushButton.new("Fill Color")
+      @terrain_preset_buttons = build_terrain_preset_buttons
       @updating_panel = false
 
       @status_bar = @widget.status_bar
@@ -760,10 +762,15 @@ module WargameMapToolCrystal
         color = Qt6::ColorDialog.get_color(@widget, layer.accent, title: "Select Fill Color")
         next unless color
 
-        layer.accent = color
-        refresh_layer_model
-        @terrain_color_button.text = color_button_text("Fill", color)
-        @canvas.refresh("Updated fill color")
+        apply_terrain_fill_color(color, "Updated fill color")
+      end
+
+      terrain_fill_presets.each_with_index do |preset, index|
+        @terrain_preset_buttons[index].on_clicked do
+          next if @updating_panel
+
+          apply_terrain_fill_color(preset[1], "Switched fill color to #{preset[0]}")
+        end
       end
 
       @path_width_spin.set_range(1.0, 12.0)
@@ -968,6 +975,7 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Fill Tool")
         column << @terrain_fill_label
         column << @terrain_color_button
+        column << build_terrain_preset_row
       end
       path_controls = Qt6::Widget.new
       path_controls.vbox do |column|
@@ -1084,10 +1092,12 @@ module WargameMapToolCrystal
         @terrain_fill_label.text = "Painted hexes: #{layer.fill_count}"
         @terrain_color_button.text = color_button_text("Fill", layer.accent)
         @terrain_color_button.enabled = true
+        update_terrain_preset_button_styles(layer.accent)
       else
         @terrain_fill_label.text = "Painted hexes: unavailable"
         @terrain_color_button.text = "Fill Color"
         @terrain_color_button.enabled = false
+        update_terrain_preset_button_styles(nil)
       end
       if layer = @state.background_layer
         @background_offset_x_spin.value = layer.offset_x
@@ -1242,6 +1252,60 @@ module WargameMapToolCrystal
 
     private def color_button_text(prefix : String, color : Qt6::Color) : String
       "#{prefix} Color (#{color.red}, #{color.green}, #{color.blue})"
+    end
+
+    private def terrain_fill_presets : Array(Tuple(String, Qt6::Color))
+      [
+        {"Olive", Qt6::Color.new(136, 160, 92)},
+        {"Sand", Qt6::Color.new(194, 171, 118)},
+        {"Water", Qt6::Color.new(92, 128, 170)},
+        {"Rock", Qt6::Color.new(122, 116, 104)},
+      ]
+    end
+
+    private def build_terrain_preset_buttons : Array(Qt6::PushButton)
+      terrain_fill_presets.map do |preset|
+        button = Qt6::PushButton.new(preset[0])
+        button.fixed_height = 28
+        button.tool_tip = "Set fill color to #{preset[0]}"
+        button
+      end
+    end
+
+    private def build_terrain_preset_row : Qt6::Widget
+      row_widget = Qt6::Widget.new
+      row = Qt6::HBoxLayout.new(row_widget)
+      row.spacing = 6
+      row.set_contents_margins(0, 0, 0, 0)
+      @terrain_preset_buttons.each do |button|
+        row << button
+      end
+      row_widget
+    end
+
+    private def apply_terrain_fill_color(color : Qt6::Color, message : String) : Nil
+      return unless layer = @state.terrain_layer
+
+      layer.accent = color
+      refresh_layer_model
+      refresh_inspector
+      @canvas.refresh(message)
+    end
+
+    private def update_terrain_preset_button_styles(active_color : Qt6::Color?) : Nil
+      terrain_fill_presets.each_with_index do |preset, index|
+        color = preset[1]
+        selected = active_color && colors_match?(active_color, color)
+        @terrain_preset_buttons[index].style_sheet = if selected
+                                                       "QPushButton { background: rgb(#{color.red}, #{color.green}, #{color.blue}); border: 2px solid rgb(52, 48, 42); color: rgb(32, 28, 24); font-weight: 600; }"
+                                                     else
+                                                       "QPushButton { background: rgb(#{color.red}, #{color.green}, #{color.blue}); border: 1px solid rgb(140, 132, 120); color: rgb(32, 28, 24); }"
+                                                     end
+      end
+    end
+
+    private def colors_match?(left : Qt6::Color, right : Qt6::Color) : Bool
+      left.red == right.red && left.green == right.green && left.blue == right.blue && left.alpha == right.alpha
     end
 
     private def apply_icon : Nil
