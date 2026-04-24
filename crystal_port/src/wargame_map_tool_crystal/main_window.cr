@@ -85,9 +85,13 @@ module WargameMapToolCrystal
     @project_label : Qt6::Label
     @source_label : Qt6::Label
     @background_label : Qt6::Label
+    @asset_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @asset_scale_spin : Qt6::DoubleSpinBox
+    @asset_rotation_spin : Qt6::DoubleSpinBox
+    @asset_opacity_spin : Qt6::DoubleSpinBox
     @text_value_edit : Qt6::LineEdit
     @text_font_size_spin : Qt6::SpinBox
     @text_bold_check : Qt6::CheckBox
@@ -121,9 +125,13 @@ module WargameMapToolCrystal
       @project_label = Qt6::Label.new
       @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
+      @asset_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @asset_scale_spin = Qt6::DoubleSpinBox.new
+      @asset_rotation_spin = Qt6::DoubleSpinBox.new
+      @asset_opacity_spin = Qt6::DoubleSpinBox.new
       @text_value_edit = Qt6::LineEdit.new
       @text_font_size_spin = Qt6::SpinBox.new
       @text_bold_check = Qt6::CheckBox.new("Bold")
@@ -555,6 +563,41 @@ module WargameMapToolCrystal
         @canvas.refresh("Background scale #{value.round(2)}x")
       end
 
+      @asset_scale_spin.set_range(0.1, 4.0)
+      @asset_scale_spin.decimals = 2
+      @asset_scale_spin.single_step = 0.05
+      @asset_scale_spin.suffix = "x"
+      @asset_scale_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_asset_object if @state.selected_asset_present?)
+
+        object.scale = value
+        @canvas.refresh("Updated asset scale")
+      end
+
+      @asset_rotation_spin.set_range(-180.0, 180.0)
+      @asset_rotation_spin.decimals = 1
+      @asset_rotation_spin.single_step = 5.0
+      @asset_rotation_spin.suffix = " deg"
+      @asset_rotation_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_asset_object if @state.selected_asset_present?)
+
+        object.rotation = value
+        @canvas.refresh("Updated asset rotation")
+      end
+
+      @asset_opacity_spin.set_range(0.0, 1.0)
+      @asset_opacity_spin.decimals = 2
+      @asset_opacity_spin.single_step = 0.05
+      @asset_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_asset_object if @state.selected_asset_present?)
+
+        object.opacity = value
+        @canvas.refresh("Updated asset opacity")
+      end
+
       @text_value_edit.placeholder_text = "Select a text label"
       @text_value_edit.on_text_changed do |value|
         next if @updating_panel
@@ -655,6 +698,17 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Scale")
         column << @background_scale_spin
       end
+      asset_controls = Qt6::Widget.new
+      asset_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Asset")
+        column << @asset_label
+        column << Qt6::Label.new("Scale")
+        column << @asset_scale_spin
+        column << Qt6::Label.new("Rotation")
+        column << @asset_rotation_spin
+        column << Qt6::Label.new("Opacity")
+        column << @asset_opacity_spin
+      end
       text_controls = Qt6::Widget.new
       text_controls.vbox do |column|
         column << Qt6::Label.new("Selected Text")
@@ -681,6 +735,7 @@ module WargameMapToolCrystal
         column << @source_label
         column << @background_label
         column << background_controls
+        column << asset_controls
         column << text_controls
         column << @active_tool_label
         column << @active_layer_label
@@ -742,6 +797,27 @@ module WargameMapToolCrystal
         @background_offset_y_spin.value = layer.offset_y
         @background_scale_spin.value = layer.scale
       end
+      if object = (@state.selected_asset_object if @state.selected_asset_present?)
+        @asset_label.text = if path = object.image_path
+                              "Asset: #{File.basename(path)}"
+                            else
+                              "Asset: #{object.label}"
+                            end
+        @asset_scale_spin.value = object.scale
+        @asset_rotation_spin.value = object.rotation
+        @asset_opacity_spin.value = object.opacity
+        @asset_scale_spin.enabled = true
+        @asset_rotation_spin.enabled = true
+        @asset_opacity_spin.enabled = true
+      else
+        @asset_label.text = "Asset: none selected"
+        @asset_scale_spin.value = 1.0
+        @asset_rotation_spin.value = 0.0
+        @asset_opacity_spin.value = 1.0
+        @asset_scale_spin.enabled = false
+        @asset_rotation_spin.enabled = false
+        @asset_opacity_spin.enabled = false
+      end
       if object = (@state.selected_text_object if @state.selected_text_present?)
         @text_value_edit.text = object.text
         @text_font_size_spin.value = object.font_size
@@ -792,7 +868,9 @@ module WargameMapToolCrystal
                             "Hover: outside map"
                           end
       @layer_visible_check.checked = @state.active_layer.visible
-      @selection_note.text = if object = (@state.selected_text_object if @state.selected_text_present?)
+      @selection_note.text = if object = (@state.selected_asset_object if @state.selected_asset_present?)
+                               "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
+                             elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              else
                                "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."

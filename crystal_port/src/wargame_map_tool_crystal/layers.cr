@@ -455,6 +455,35 @@ module WargameMapToolCrystal
       end
     end
 
+    def world_width : Float64
+      image = @image
+      if image && !image.null?
+        image.width * @scale
+      else
+        28.0 * @scale.clamp(0.5, 2.4)
+      end
+    end
+
+    def world_height : Float64
+      image = @image
+      if image && !image.null?
+        image.height * @scale
+      else
+        24.0 * @scale.clamp(0.5, 2.4)
+      end
+    end
+
+    def world_rect : Qt6::RectF
+      width = world_width
+      height = world_height
+      Qt6::RectF.new(@x - width / 2.0, @y - height / 2.0, width, height)
+    end
+
+    def contains_world_point(point : Qt6::PointF) : Bool
+      rect = world_rect
+      point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0, accent : Qt6::Color = Qt6::Color.new(94, 100, 112)) : Nil
       screen = state.screen_point(Qt6::PointF.new(@x, @y))
       alpha = (layer_opacity * @opacity).clamp(0.0, 1.0)
@@ -482,6 +511,22 @@ module WargameMapToolCrystal
         painter.draw_text(Qt6::PointF.new(rect.x + 4.0, rect.y + height / 2.0 + 4.0), label[0, 3].upcase)
       end
 
+      painter.restore
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      screen = state.screen_point(Qt6::PointF.new(@x, @y))
+      width = world_width * state.zoom
+      height = world_height * state.zoom
+      selection_pen = Qt6::QPen.new(accent, 2.0)
+      selection_pen.style = Qt6::PenStyle::DashLine
+
+      painter.save
+      painter.pen = selection_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.translate(screen.x, screen.y)
+      painter.rotate(@rotation) if @rotation != 0.0
+      painter.draw_rect(Qt6::RectF.new(-width / 2.0, -height / 2.0, width, height))
       painter.restore
     end
 
@@ -530,12 +575,36 @@ module WargameMapToolCrystal
       @objects.size.to_i32
     end
 
+    def remove_asset(object : AssetObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
+    def nearest_asset(state : MapState, screen_point : Qt6::PointF) : AssetObject?
+      world = state.screen_to_world(screen_point)
+
+      @objects.reverse_each do |object|
+        return object if object.contains_world_point(world)
+      end
+
+      nil
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
       return unless state.show_assets
 
       layer_opacity = opacity / 100.0
       @objects.each do |object|
         object.paint(painter, state, layer_opacity, accent)
+      end
+
+      if selected = state.selected_asset_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
       end
     end
   end

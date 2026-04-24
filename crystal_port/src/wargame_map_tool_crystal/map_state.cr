@@ -23,6 +23,7 @@ module WargameMapToolCrystal
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
     property selected_text_object : TextObject?
+    property selected_asset_object : AssetObject?
     getter layers : Array(MapLayer)
     getter cols : Int32
     getter rows : Int32
@@ -44,6 +45,7 @@ module WargameMapToolCrystal
       @hover_hex = nil
       @hover_screen = nil
       @selected_text_object = nil
+      @selected_asset_object = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -66,6 +68,7 @@ module WargameMapToolCrystal
       @hover_hex = nil
       @hover_screen = nil
       @selected_text_object = nil
+      @selected_asset_object = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -150,6 +153,7 @@ module WargameMapToolCrystal
 
       object = TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true)
       layer.add_text(object)
+      @selected_asset_object = nil
       @selected_text_object = object
       true
     end
@@ -166,8 +170,21 @@ module WargameMapToolCrystal
       @selected_text_object = nil
     end
 
+    def selected_asset_present? : Bool
+      object = @selected_asset_object
+      layer = asset_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_asset_selection : Nil
+      @selected_asset_object = nil
+    end
+
     def select_hovered_text : TextObject?
       object = hovered_text_object
+      @selected_asset_object = nil
       @selected_text_object = object
       object
     end
@@ -178,6 +195,21 @@ module WargameMapToolCrystal
       return nil unless screen && layer
 
       layer.nearest_text(self, screen)
+    end
+
+    def select_hovered_asset : AssetObject?
+      object = hovered_asset_object
+      @selected_text_object = nil
+      @selected_asset_object = object
+      object
+    end
+
+    def hovered_asset_object : AssetObject?
+      screen = @hover_screen
+      layer = asset_layer
+      return nil unless screen && layer
+
+      layer.nearest_asset(self, screen)
     end
 
     def save_slice(path : String) : Nil
@@ -270,6 +302,7 @@ module WargameMapToolCrystal
 
       text_layer.try(&.clear_texts)
       @selected_text_object = nil
+      @selected_asset_object = nil
       data["text_objects"]?.try(&.as_a?).try do |objects|
         if layer = text_layer
           objects.each do |object_data|

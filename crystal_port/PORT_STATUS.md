@@ -21,6 +21,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - Crystal slice JSON save/load for background image state and transform
 - object-backed path layer with per-segment color, width, line style, opacity, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
+- explicit asset selection via canvas clicks when the Asset tool is active, with drag-to-move and inspector-based scale, rotation, and opacity editing
 - object-backed text layer with renderable text objects instead of hard-coded label tuples
 - add-text action plus Crystal slice JSON persistence for text objects
 - basic hovered-text edit/delete actions with hover feedback in the inspector
@@ -39,7 +40,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - the actual command stack and undo/redo command translations
 - the remaining real data-backed layer implementations from the Python app beyond background, paths, assets, and text
 - asset libraries, texture libraries, palette editors, and manager dialogs
-- asset-layer editing parity beyond seeded image placement, fallback rendering, and slice-state persistence
+- asset-layer editing parity beyond basic selection, move, inspector editing of core object properties, seeded image placement, fallback rendering, and slice-state persistence
 - background-layer editing parity beyond basic image import, transform, and slice-state persistence
 - text-layer editing parity beyond basic selection, move, inspector editing of core object properties, add/edit/delete, and slice-state persistence
 - the advanced paint, fill, path editing, border, hexside, and text tool behaviors

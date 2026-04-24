@@ -7,6 +7,7 @@ module WargameMapToolCrystal
 
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
+    @drag_asset_object : AssetObject?
     @drag_mode : String
 
     getter widget : Qt6::EventWidget
@@ -18,6 +19,7 @@ module WargameMapToolCrystal
       @widget.mouse_tracking = true
       @press_pointer = nil
       @drag_text_object = nil
+      @drag_asset_object = nil
       @drag_mode = "pan"
       @drag_moved = false
       wire_events
@@ -36,6 +38,7 @@ module WargameMapToolCrystal
         @state.last_pointer = event.position
         @press_pointer = event.position
         @drag_text_object = nil
+        @drag_asset_object = nil
         @drag_mode = "pan"
         @drag_moved = false
 
@@ -45,6 +48,13 @@ module WargameMapToolCrystal
           if selected && hovered == selected
             @drag_text_object = selected
             @drag_mode = "text_move"
+          end
+        elsif @state.active_tool == "Asset" && @state.selected_asset_present?
+          selected = @state.selected_asset_object
+          hovered = @state.asset_layer.try(&.nearest_asset(@state, event.position))
+          if selected && hovered == selected
+            @drag_asset_object = selected
+            @drag_mode = "asset_move"
           end
         end
 
@@ -64,6 +74,9 @@ module WargameMapToolCrystal
             dy = event.position.y - @state.last_pointer.y
 
             if @drag_mode == "text_move" && (object = @drag_text_object)
+              object.x += dx / @state.zoom
+              object.y += dy / @state.zoom
+            elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
             else
@@ -89,8 +102,21 @@ module WargameMapToolCrystal
               @state.clear_text_selection
               refresh("Cleared text selection")
             end
-          elsif @drag_moved && @drag_mode == "text_move" && (object = @drag_text_object)
-            refresh("Moved text '#{object.text}'")
+          elsif !@drag_moved && @state.active_tool == "Asset"
+            if object = @state.select_hovered_asset
+              refresh("Selected asset '#{object.label}'")
+            else
+              @state.clear_asset_selection
+              refresh("Cleared asset selection")
+            end
+          elsif @drag_moved && @drag_mode == "text_move"
+            if object = @drag_text_object
+              refresh("Moved text '#{object.text}'")
+            end
+          elsif @drag_moved && @drag_mode == "asset_move"
+            if object = @drag_asset_object
+              refresh("Moved asset '#{object.label}'")
+            end
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
@@ -98,6 +124,7 @@ module WargameMapToolCrystal
           @state.dragging = false
           @press_pointer = nil
           @drag_text_object = nil
+          @drag_asset_object = nil
           @drag_mode = "pan"
           @drag_moved = false
         end
@@ -154,7 +181,15 @@ module WargameMapToolCrystal
                      end
 
       if object = @state.hovered_text_object
-        @hover_callback.call("#{base_message} | Text: #{object.text}")
+        base_message = "#{base_message} | Text: #{object.text}"
+      end
+
+      if object = @state.hovered_asset_object
+        base_message = "#{base_message} | Asset: #{object.label}"
+      end
+
+      if base_message.includes?("|")
+        @hover_callback.call(base_message)
       else
         @hover_callback.call(base_message)
       end
