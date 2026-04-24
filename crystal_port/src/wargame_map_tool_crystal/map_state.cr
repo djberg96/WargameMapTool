@@ -22,6 +22,7 @@ module WargameMapToolCrystal
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
+    property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_path_object : PathObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
@@ -45,6 +46,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -69,6 +71,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -215,6 +218,45 @@ module WargameMapToolCrystal
       @selected_path_object = nil
     end
 
+    def clear_pending_path_anchor : Nil
+      @pending_path_anchor = nil
+    end
+
+    def begin_pending_path(anchor : Tuple(Int32, Int32)) : Tuple(Int32, Int32)
+      activate_path_layer
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = anchor
+      anchor
+    end
+
+    def create_path_from_pending(target : Tuple(Int32, Int32)) : PathObject?
+      anchor = @pending_path_anchor
+      layer = path_layer
+      return nil unless anchor && layer
+      return nil if anchor == target
+
+      activate_path_layer
+      style_source = selected_path_present? ? @selected_path_object : nil
+      object = PathObject.new(
+        anchor[0],
+        anchor[1],
+        target[0],
+        target[1],
+        color: style_source ? style_source.color : layer.accent,
+        width: style_source ? style_source.width : 3.0,
+        line_type: style_source ? style_source.line_type : "solid",
+        opacity: style_source ? style_source.opacity : 1.0,
+      )
+
+      layer.add_path(object)
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @selected_path_object = object
+      @pending_path_anchor = nil
+      object
+    end
+
     def duplicate_selected_path : PathObject?
       source = @selected_path_object
       layer = path_layer
@@ -343,6 +385,7 @@ module WargameMapToolCrystal
       object = hovered_path_object
       @selected_text_object = nil
       @selected_asset_object = nil
+      @pending_path_anchor = nil
       @selected_path_object = object
       object
     end
@@ -461,6 +504,7 @@ module WargameMapToolCrystal
       end
 
       text_layer.try(&.clear_texts)
+      @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
@@ -517,6 +561,12 @@ module WargameMapToolCrystal
         text_layer,
         asset_layer,
       ] of MapLayer
+    end
+
+    private def activate_path_layer : Nil
+      if index = path_layer_index
+        set_active_layer(index)
+      end
     end
 
     private def seed_default_path_objects(layer : PathLayer) : Nil

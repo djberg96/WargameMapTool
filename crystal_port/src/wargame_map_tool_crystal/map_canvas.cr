@@ -105,7 +105,22 @@ module WargameMapToolCrystal
           elsif !@drag_moved && @state.active_tool == "Path"
             if object = @state.select_hovered_path
               refresh("Selected path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
+            elsif hover = @state.hover_hex
+              if anchor = @state.pending_path_anchor
+                if anchor == hover
+                  @state.clear_pending_path_anchor
+                  refresh("Canceled pending path at #{@state.hex_label(anchor[0], anchor[1])}")
+                elsif object = @state.create_path_from_pending(hover)
+                  refresh("Created path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
+                else
+                  refresh("Path creation failed")
+                end
+              else
+                @state.begin_pending_path(hover)
+                refresh("Path start set at #{@state.hex_label(hover[0], hover[1])}")
+              end
             else
+              @state.clear_pending_path_anchor
               @state.clear_path_selection
               refresh("Cleared path selection")
             end
@@ -174,6 +189,7 @@ module WargameMapToolCrystal
         draw_layers(painter)
         draw_grid_overlay(painter)
         draw_hover(painter)
+        draw_pending_path_preview(painter)
         draw_hud(painter)
       end
     end
@@ -194,6 +210,18 @@ module WargameMapToolCrystal
 
       if object = @state.hovered_path_object
         base_message = "#{base_message} | Path: #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+      elsif @state.active_tool == "Path"
+        if anchor = @state.pending_path_anchor
+          if hover = @state.hover_hex
+            if anchor != hover
+              base_message = "#{base_message} | New Path: #{@state.hex_label(anchor[0], anchor[1])}-#{@state.hex_label(hover[0], hover[1])}"
+            else
+              base_message = "#{base_message} | Click again to cancel path start"
+            end
+          else
+            base_message = "#{base_message} | Pending Path: #{@state.hex_label(anchor[0], anchor[1])}"
+          end
+        end
       end
 
       if object = @state.hovered_asset_object
@@ -257,6 +285,41 @@ module WargameMapToolCrystal
       painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
       painter.pen = Qt6::Color.new(46, 48, 54)
       painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y + 18.0), @state.active_tool)
+    end
+
+    private def draw_pending_path_preview(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Path"
+      return unless anchor = @state.pending_path_anchor
+
+      start_point = @state.screen_point(@state.hex_center(anchor[0], anchor[1]))
+
+      painter.save
+      painter.pen = Qt6::QPen.new(@state.active_layer.accent, 2.0)
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = 0.8
+      painter.draw_ellipse(Qt6::RectF.new(start_point.x - 10.0, start_point.y - 10.0, 20.0, 20.0))
+
+      if hover = @state.hover_hex
+        unless hover == anchor
+          style_source = @state.selected_path_object if @state.selected_path_present?
+          pen = Qt6::QPen.new(style_source ? style_source.color : @state.active_layer.accent, style_source ? style_source.width : 3.0)
+          pen.style = case style_source.try(&.line_type)
+                      when "dashed"
+                        Qt6::PenStyle::DashLine
+                      when "dotted"
+                        Qt6::PenStyle::DotLine
+                      else
+                        Qt6::PenStyle::DashLine
+                      end
+
+          end_point = @state.screen_point(@state.hex_center(hover[0], hover[1]))
+          painter.pen = pen
+          painter.opacity = style_source ? style_source.opacity.clamp(0.0, 1.0) : 0.75
+          painter.draw_line(start_point, end_point)
+        end
+      end
+
+      painter.restore
     end
 
     private def draw_hud(painter : Qt6::QPainter) : Nil

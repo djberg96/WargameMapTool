@@ -649,6 +649,7 @@ module WargameMapToolCrystal
         action.checkable = true
         action.checked = tool_name == @state.active_tool
         action.on_triggered do
+          @state.clear_pending_path_anchor unless tool_name == "Path"
           @state.active_tool = tool_name
           refresh_inspector
           @canvas.refresh("#{tool_name} tool active")
@@ -781,7 +782,7 @@ module WargameMapToolCrystal
         next unless color
 
         object.color = color
-        @path_color_button.text = color_button_text(color)
+        @path_color_button.text = color_button_text("Path", color)
         @canvas.refresh("Updated path color")
       end
 
@@ -902,7 +903,7 @@ module WargameMapToolCrystal
         next unless color
 
         object.color = color
-        @text_color_button.text = color_button_text(color)
+        @text_color_button.text = color_button_text("Text", color)
         @canvas.refresh("Updated text color")
       end
 
@@ -1066,7 +1067,7 @@ module WargameMapToolCrystal
                                               else
                                                 0
                                               end
-        @path_color_button.text = color_button_text(object.color)
+        @path_color_button.text = color_button_text("Path", object.color)
         @path_opacity_spin.value = object.opacity
         @path_width_spin.enabled = true
         @path_line_type_combo.enabled = true
@@ -1129,7 +1130,7 @@ module WargameMapToolCrystal
                                               else
                                                 0
                                               end
-        @text_color_button.text = color_button_text(object.color)
+        @text_color_button.text = color_button_text("Text", object.color)
         @text_opacity_spin.value = object.opacity
         @text_rotation_spin.value = object.rotation
         @text_bold_check.checked = object.bold
@@ -1168,7 +1169,17 @@ module WargameMapToolCrystal
                             "Hover: outside map"
                           end
       @layer_visible_check.checked = @state.active_layer.visible
-      @selection_note.text = if object = (@state.selected_path_object if @state.selected_path_present?)
+      @selection_note.text = if anchor = @state.pending_path_anchor
+                               if hover = @state.hover_hex
+                                 if anchor == hover
+                                   "Pending path start: #{@state.hex_label(anchor[0], anchor[1])}. Click the same hex again to cancel, or click another hex with the Path tool to create a segment."
+                                 else
+                                   "Pending path: #{@state.hex_label(anchor[0], anchor[1])} -> #{@state.hex_label(hover[0], hover[1])}. Click to create this segment, or leave the Path tool to cancel."
+                                 end
+                               else
+                                 "Pending path start: #{@state.hex_label(anchor[0], anchor[1])}. Click another hex with the Path tool to finish the segment."
+                               end
+                             elsif object = (@state.selected_path_object if @state.selected_path_present?)
                                "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection or edit it in the inspector."
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
@@ -1185,8 +1196,8 @@ module WargameMapToolCrystal
       refresh_inspector
     end
 
-    private def color_button_text(color : Qt6::Color) : String
-      "Text Color (#{color.red}, #{color.green}, #{color.blue})"
+    private def color_button_text(prefix : String, color : Qt6::Color) : String
+      "#{prefix} Color (#{color.red}, #{color.green}, #{color.blue})"
     end
 
     private def apply_icon : Nil
