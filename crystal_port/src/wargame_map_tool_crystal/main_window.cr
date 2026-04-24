@@ -206,6 +206,11 @@ module WargameMapToolCrystal
       asset_image_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
       asset_image_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
 
+      add_asset_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
+      add_asset_dialog.window_title = "Add Asset Image"
+      add_asset_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
+      add_asset_dialog.file_mode = Qt6::FileDialogFileMode::ExistingFile
+
       new_action = Qt6::Action.new("New Port Slice", @widget)
       new_action.shortcut = "Ctrl+N"
       new_action.on_triggered do
@@ -329,6 +334,26 @@ module WargameMapToolCrystal
           refresh_all("Added text label")
         else
           handle_status(value.nil? ? "Text add canceled" : "Text add failed")
+        end
+      end
+
+      add_asset_action = Qt6::Action.new("Add Asset…", @widget)
+      add_asset_action.shortcut = "Ctrl+Shift+A"
+      add_asset_action.on_triggered do
+        if add_asset_dialog.exec == Qt6::DialogCode::Accepted
+          selected = add_asset_dialog.selected_file
+
+          if !selected.empty? && @state.add_asset(selected)
+            if index = @state.asset_layer_index
+              @state.set_active_layer(index)
+              @layer_tree.current_index = @layer_model.index(index, 0)
+            end
+            refresh_all("Added asset #{File.basename(selected)}")
+          else
+            handle_status(selected.empty? ? "Asset add canceled" : "Asset add failed")
+          end
+        else
+          handle_status("Asset add canceled")
         end
       end
 
@@ -479,12 +504,14 @@ module WargameMapToolCrystal
       file_menu << open_action
       file_menu << import_background_action
       file_menu << add_text_action
+      file_menu << add_asset_action
       file_menu << save_slice_action
       file_menu << export_action
       file_menu.add_separator
       file_menu << quit_action
 
       edit_menu << add_text_action
+      edit_menu << add_asset_action
       edit_menu << edit_text_action
       edit_menu << delete_text_action
       edit_menu << replace_asset_image_action

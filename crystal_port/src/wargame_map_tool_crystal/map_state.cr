@@ -138,6 +138,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def asset_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(AssetLayer)
+      end
+
+      nil
+    end
+
     def add_text_label(text : String) : Bool
       clean_text = text.strip
       return false if clean_text.empty?
@@ -155,6 +163,28 @@ module WargameMapToolCrystal
       layer.add_text(object)
       @selected_asset_object = nil
       @selected_text_object = object
+      true
+    end
+
+    def add_asset(image_path : String, scale : Float64 = 0.5) : Bool
+      clean_path = image_path.strip
+      return false if clean_path.empty?
+
+      layer = asset_layer
+      return false unless layer
+
+      anchor = if hover = @hover_hex
+                 hex_center(hover[0], hover[1])
+               else
+                 Qt6::PointF.new(world_bounds.x + world_bounds.width / 2.0, world_bounds.y + world_bounds.height / 2.0)
+               end
+
+      object = AssetObject.new(anchor.x, anchor.y, clean_path, scale: scale)
+      return false unless object.has_image?
+
+      layer.add_asset(object)
+      @selected_text_object = nil
+      @selected_asset_object = object
       true
     end
 
