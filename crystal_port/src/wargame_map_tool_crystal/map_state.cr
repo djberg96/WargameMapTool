@@ -18,6 +18,8 @@ module WargameMapToolCrystal
     property show_grid : Bool
     property show_coordinates : Bool
     property show_assets : Bool
+    property grid_orientation : String
+    property first_row_offset : String
     property project_path : String?
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
@@ -46,6 +48,8 @@ module WargameMapToolCrystal
       @show_grid = true
       @show_coordinates = true
       @show_assets = true
+      @grid_orientation = "pointy"
+      @first_row_offset = "even"
       @project_path = nil
       @source_path = nil
       @hover_hex = nil
@@ -75,6 +79,8 @@ module WargameMapToolCrystal
       @show_grid = true
       @show_coordinates = true
       @show_assets = true
+      @grid_orientation = "pointy"
+      @first_row_offset = "even"
       @project_path = nil
       @source_path = nil
       @hover_hex = nil
@@ -581,6 +587,17 @@ module WargameMapToolCrystal
         json.object do
           json.field "version", 1
           json.field "source_path", @source_path if @source_path
+          json.field "grid" do
+            json.object do
+              json.field "width", @cols
+              json.field "height", @rows
+              json.field "hex_size", @hex_radius
+              json.field "orientation", @grid_orientation
+              json.field "first_row_offset", @first_row_offset
+              json.field "show_grid", @show_grid
+              json.field "show_coordinates", @show_coordinates
+            end
+          end
 
           json.field "background" do
             if layer = background_layer
@@ -720,6 +737,7 @@ module WargameMapToolCrystal
       data = JSON.parse(File.read(path))
 
       reset
+      apply_grid_config(data["grid"]?) if data["grid"]?
       @project_path = path
       @source_path = data["source_path"]?.try(&.as_s?)
 
@@ -840,6 +858,54 @@ module WargameMapToolCrystal
       true
     rescue
       false
+    end
+
+    def load_hexmap(path : String) : String?
+      data = JSON.parse(File.read(path))
+
+      reset
+      @project_path = nil
+      @source_path = path
+      apply_grid_config(data["grid"]?)
+      clear_ported_layer_content
+
+      skipped_types = [] of String
+
+      data["layers"]?.try(&.as_a?).try do |layers|
+        layers.each do |layer_data|
+          layer_type = layer_data["type"]?.try(&.as_s?) || ""
+
+          case layer_type
+          when "background"
+            import_background_layer(path, layer_data)
+          when "fill"
+            import_fill_layer(layer_data)
+          when "border"
+            import_border_layer(layer_data)
+          when "hexside"
+            import_hexside_layer(layer_data)
+          when "path"
+            import_path_layer(layer_data)
+          when "freeform_path"
+            import_freeform_path_layer(layer_data)
+          when "text"
+            import_text_layer(layer_data)
+          when "asset"
+            import_asset_layer(path, layer_data)
+          when ""
+          else
+            skipped_types << layer_type
+          end
+        end
+      end
+
+      if skipped_types.empty?
+        "Opened #{File.basename(path)}"
+      else
+        "Opened #{File.basename(path)} (skipped #{skipped_types.uniq.sort.join(", ")})"
+      end
+    rescue
+      nil
     end
 
     private def build_default_layers : Array(MapLayer)
@@ -1041,6 +1107,320 @@ module WargameMapToolCrystal
       File.exists?(path) ? path : nil
     end
 
+    private def clear_ported_layer_content : Nil
+      if layer = background_layer
+        layer.clear_image
+        layer.offset_x = 0.0
+        layer.offset_y = 0.0
+        layer.scale = 1.0
+        layer.visible = true
+        layer.opacity = 100
+      end
+
+      if layer = terrain_layer
+        layer.clear_fills
+        layer.visible = true
+        layer.opacity = 100
+      end
+
+      border_layer.try(&.clear_borders)
+      hexside_layer.try(&.clear_hexsides)
+      path_layer.try(&.clear_paths)
+      freeform_path_layer.try(&.clear_paths)
+      text_layer.try(&.clear_texts)
+      asset_layer.try(&.clear_assets)
+
+      @fill_radius = 0
+      @pending_path_anchor = nil
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_freeform_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @active_tool = "Fill"
+      @active_layer_index = 1
+    end
+
+    private def apply_grid_config(grid_data : JSON::Any?) : Nil
+      return unless grid = grid_data
+
+      @cols = (grid["width"]?.try(&.as_i?) || @cols).to_i32.clamp(1, 500)
+      @rows = (grid["height"]?.try(&.as_i?) || @rows).to_i32.clamp(1, 500)
+      @hex_radius = json_number(grid["hex_size"]?) || @hex_radius
+      @hex_radius = @hex_radius.clamp(6.0, 256.0)
+      @grid_orientation = normalize_orientation(grid["orientation"]?.try(&.as_s?))
+      @first_row_offset = normalize_row_offset(grid["first_row_offset"]?.try(&.as_s?))
+      @show_grid = grid["show_grid"]?.try(&.as_bool?) != false
+      @show_coordinates = grid["show_coordinates"]?.try(&.as_bool?) || false
+    end
+
+    private def import_background_layer(project_path : String, data : JSON::Any) : Nil
+      layer = background_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      image_path = data["edited_image_path"]?.try(&.as_s?)
+      image_path = data["image_path"]?.try(&.as_s?) if image_path.nil? || image_path.try(&.empty?)
+
+      if path = image_path
+        resolved_path = resolve_project_asset_path(project_path, path)
+        layer.load_image(resolved_path) unless resolved_path.empty?
+      end
+
+      layer.offset_x = json_number(data["offset_x"]?) || 0.0
+      layer.offset_y = json_number(data["offset_y"]?) || 0.0
+      layer.scale = (json_number(data["scale"]?) || 1.0).clamp(0.05, 20.0)
+    end
+
+    private def import_fill_layer(data : JSON::Any) : Nil
+      layer = terrain_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["hexes"]?.try(&.as_h?).try do |hexes|
+        hexes.each do |key, value|
+          coords = axial_key_to_offset(key)
+          next unless coords
+          next unless valid_hex_coord?(coords[0], coords[1])
+
+          color = color_from_json(value, layer.accent)
+          layer.set_fill(coords[0], coords[1], color)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_border_layer(data : JSON::Any) : Nil
+      layer = border_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["borders"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          start_coords = axial_coords_to_offset(
+            (object_data["hex_a_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_a_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          end_coords = axial_coords_to_offset(
+            (object_data["hex_b_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_b_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          next unless valid_hex_coord?(start_coords[0], start_coords[1]) && valid_hex_coord?(end_coords[0], end_coords[1])
+
+          color = color_from_json(object_data["color"]?, layer.accent)
+          object = BorderObject.new(
+            start_coords[0],
+            start_coords[1],
+            end_coords[0],
+            end_coords[1],
+            color,
+            json_number(object_data["width"]?) || 3.0,
+            normalize_line_type(object_data["line_type"]?.try(&.as_s?)),
+          )
+          layer.add_border(object)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_hexside_layer(data : JSON::Any) : Nil
+      layer = hexside_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["hexsides"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          start_coords = axial_coords_to_offset(
+            (object_data["hex_a_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_a_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          end_coords = axial_coords_to_offset(
+            (object_data["hex_b_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_b_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          next unless valid_hex_coord?(start_coords[0], start_coords[1]) && valid_hex_coord?(end_coords[0], end_coords[1])
+
+          color = color_from_json(object_data["color"]?, layer.accent)
+          object = HexsideObject.new(
+            start_coords[0],
+            start_coords[1],
+            end_coords[0],
+            end_coords[1],
+            color,
+            json_number(object_data["width"]?) || 4.0,
+            object_opacity(object_data["opacity"]?),
+          )
+          layer.add_hexside(object)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_path_layer(data : JSON::Any) : Nil
+      layer = path_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["paths"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          start_coords = axial_coords_to_offset(
+            (object_data["hex_a_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_a_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          end_coords = axial_coords_to_offset(
+            (object_data["hex_b_q"]?.try(&.as_i?) || 0).to_i32,
+            (object_data["hex_b_r"]?.try(&.as_i?) || 0).to_i32,
+          )
+          next unless valid_hex_coord?(start_coords[0], start_coords[1]) && valid_hex_coord?(end_coords[0], end_coords[1])
+
+          color = color_from_json(object_data["color"]?, layer.accent)
+          object = PathObject.new(
+            start_coords[0],
+            start_coords[1],
+            end_coords[0],
+            end_coords[1],
+            color,
+            json_number(object_data["width"]?) || 3.0,
+            normalize_line_type(object_data["line_type"]?.try(&.as_s?)),
+            object_opacity(object_data["opacity"]?),
+          )
+          layer.add_path(object)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_freeform_path_layer(data : JSON::Any) : Nil
+      layer = freeform_path_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["paths"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          points = [] of Tuple(Float64, Float64)
+          object_data["points"]?.try(&.as_a?).try do |items|
+            items.each do |item|
+              if coords = item.as_a?
+                next unless coords.size >= 2
+                x = json_number(coords[0]?) || 0.0
+                y = json_number(coords[1]?) || 0.0
+                points << {x, y}
+              end
+            end
+          end
+          next unless points.size >= 2
+
+          color = color_from_json(object_data["color"]?, layer.accent)
+          object = FreeformPathObject.new(
+            points,
+            color,
+            json_number(object_data["width"]?) || 3.0,
+            object_opacity(object_data["opacity"]?),
+          )
+          layer.add_path(object)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_text_layer(data : JSON::Any) : Nil
+      layer = text_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      first_color = nil.as(Qt6::Color?)
+
+      data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          color = color_from_json(object_data["color"]?, layer.accent)
+          object = TextObject.new(
+            object_data["text"]?.try(&.as_s?) || "Text",
+            json_number(object_data["x"]?) || 0.0,
+            json_number(object_data["y"]?) || 0.0,
+            object_data["font_family"]?.try(&.as_s?) || "Avenir Next",
+            ((json_number(object_data["font_size"]?) || 12.0).round.to_i).clamp(6, 144),
+            object_data["bold"]?.try(&.as_bool?) || false,
+            object_data["italic"]?.try(&.as_bool?) || false,
+            color,
+            normalize_alignment(object_data["alignment"]?.try(&.as_s?)),
+            object_opacity(object_data["opacity"]?),
+            json_number(object_data["rotation"]?) || 0.0,
+          )
+          layer.add_text(object)
+          first_color ||= color
+        end
+      end
+
+      layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_asset_layer(project_path : String, data : JSON::Any) : Nil
+      layer = asset_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+
+      data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          image_path = object_data["image"]?.try(&.as_s?)
+          resolved_path = image_path.try { |value| resolve_project_asset_path(project_path, value) }
+          object = AssetObject.new(
+            json_number(object_data["x"]?) || 0.0,
+            json_number(object_data["y"]?) || 0.0,
+            resolved_path,
+            scale: json_number(object_data["scale"]?) || 1.0,
+            rotation: json_number(object_data["rotation"]?) || 0.0,
+            opacity: object_opacity(object_data["opacity"]?),
+            snap_to_hex: object_data["snap_to_hex"]?.try(&.as_bool?) != false,
+          )
+          layer.add_asset(object)
+        end
+      end
+    end
+
+    private def apply_layer_base(layer : MapLayer, data : JSON::Any) : Nil
+      layer.name = data["name"]?.try(&.as_s?) || layer.name
+      layer.visible = data["visible"]?.try(&.as_bool?) != false
+      layer.opacity = layer_opacity_percent(data["opacity"]?)
+    end
+
+    private def resolve_project_asset_path(project_path : String, asset_path : String) : String
+      return "" if asset_path.empty?
+      return asset_path if Path[asset_path].absolute? && File.exists?(asset_path)
+
+      if asset_path.starts_with?("builtin:")
+        relative_path = asset_path.sub(/^builtin:/, "")
+        return File.expand_path(relative_path, builtin_assets_root)
+      end
+
+      File.expand_path(asset_path, File.dirname(project_path))
+    end
+
+    private def builtin_assets_root : String
+      File.expand_path("../../assets/assets", __DIR__)
+    end
+
     private def resolve_slice_path(slice_path : String, image_path : String) : String
       return image_path if Path[image_path].absolute?
 
@@ -1048,28 +1428,63 @@ module WargameMapToolCrystal
     end
 
     def world_bounds : Qt6::RectF
-      Qt6::RectF.new(0.0, 0.0, map_width, map_height)
+      return Qt6::RectF.new(0.0, 0.0, 0.0, 0.0) if @cols <= 0 || @rows <= 0
+
+      min_x = Float64::INFINITY
+      min_y = Float64::INFINITY
+      max_x = -Float64::INFINITY
+      max_y = -Float64::INFINITY
+
+      @rows.times do |row|
+        @cols.times do |col|
+          hex_points(col, row).each do |point|
+            min_x = point.x if point.x < min_x
+            min_y = point.y if point.y < min_y
+            max_x = point.x if point.x > max_x
+            max_y = point.y if point.y > max_y
+          end
+        end
+      end
+
+      Qt6::RectF.new(min_x, min_y, max_x - min_x, max_y - min_y)
     end
 
     def map_width : Float64
-      (@cols - 1) * horizontal_step + horizontal_step + @hex_radius
+      world_bounds.width
     end
 
     def map_height : Float64
-      (@rows - 1) * vertical_step + @hex_radius * 2.0
+      world_bounds.height
     end
 
     def horizontal_step : Float64
-      Math.sqrt(3.0) * @hex_radius
+      if @grid_orientation == "flat"
+        @hex_radius * 1.5
+      else
+        Math.sqrt(3.0) * @hex_radius
+      end
     end
 
     def vertical_step : Float64
-      @hex_radius * 1.5
+      if @grid_orientation == "flat"
+        Math.sqrt(3.0) * @hex_radius
+      else
+        @hex_radius * 1.5
+      end
     end
 
     def hex_center(col : Int32, row : Int32) : Qt6::PointF
-      x = col * horizontal_step + (row.odd? ? horizontal_step / 2.0 : 0.0) + @hex_radius
-      y = row * vertical_step + @hex_radius
+      q, r = offset_to_axial(col, row)
+      x = if @grid_orientation == "flat"
+            (1.5 * q) * @hex_radius + layout_origin_x
+          else
+            (Math.sqrt(3.0) * q + (Math.sqrt(3.0) / 2.0) * r) * @hex_radius + layout_origin_x
+          end
+      y = if @grid_orientation == "flat"
+            ((Math.sqrt(3.0) / 2.0) * q + Math.sqrt(3.0) * r) * @hex_radius + layout_origin_y
+          else
+            (1.5 * r) * @hex_radius + layout_origin_y
+          end
       Qt6::PointF.new(x, y)
     end
 
@@ -1078,7 +1493,7 @@ module WargameMapToolCrystal
       points = [] of Qt6::PointF
 
       6.times do |index|
-        angle = Math::PI / 6.0 + (Math::PI / 3.0) * index
+        angle = hex_corner_start_angle + (Math::PI / 3.0) * index
         points << Qt6::PointF.new(
           center.x + Math.cos(angle) * @hex_radius,
           center.y + Math.sin(angle) * @hex_radius
@@ -1210,10 +1625,180 @@ module WargameMapToolCrystal
     end
 
     private def offset_to_cube(col : Int32, row : Int32) : Tuple(Int32, Int32, Int32)
-      q = col - ((row - (row & 1)) // 2)
-      r = row
+      q, r = offset_to_axial(col, row)
       s = -q - r
       {q, r, s}
+    end
+
+    private def offset_to_axial(col : Int32, row : Int32) : Tuple(Int32, Int32)
+      if @grid_orientation == "flat"
+        q = col
+        r = if @first_row_offset == "odd"
+              row - ((col - (col & 1)) // 2)
+            else
+              row - ((col + (col & 1)) // 2)
+            end
+      else
+        q = if @first_row_offset == "odd"
+              col - ((row - (row & 1)) // 2)
+            else
+              col - ((row + (row & 1)) // 2)
+            end
+        r = row
+      end
+
+      {q.to_i32, r.to_i32}
+    end
+
+    private def axial_coords_to_offset(q : Int32, r : Int32) : Tuple(Int32, Int32)
+      if @grid_orientation == "flat"
+        row = if @first_row_offset == "odd"
+                r + ((q - (q & 1)) // 2)
+              else
+                r + ((q + (q & 1)) // 2)
+              end
+        {q.to_i32, row.to_i32}
+      else
+        col = if @first_row_offset == "odd"
+                q + ((r - (r & 1)) // 2)
+              else
+                q + ((r + (r & 1)) // 2)
+              end
+        {col.to_i32, r.to_i32}
+      end
+    end
+
+    private def axial_key_to_offset(key : String) : Tuple(Int32, Int32)?
+      parts = key.split(",", 2)
+      return nil unless parts.size == 2
+
+      q = parts[0].to_i?
+      r = parts[1].to_i?
+      return nil unless q && r
+
+      axial_coords_to_offset(q.to_i32, r.to_i32)
+    end
+
+    private def json_number(value : JSON::Any?) : Float64?
+      return nil unless value
+
+      value.as_f? || value.as_i?.try(&.to_f64)
+    end
+
+    private def color_from_json(value : JSON::Any?, default : Qt6::Color) : Qt6::Color
+      return default unless value
+
+      if string_value = value.as_s?
+        parse_hex_color(string_value, default)
+      else
+        Qt6::Color.new(
+          (value["red"]?.try(&.as_i?) || default.red).to_i32,
+          (value["green"]?.try(&.as_i?) || default.green).to_i32,
+          (value["blue"]?.try(&.as_i?) || default.blue).to_i32,
+          (value["alpha"]?.try(&.as_i?) || default.alpha).to_i32,
+        )
+      end
+    end
+
+    private def parse_hex_color(value : String, default : Qt6::Color) : Qt6::Color
+      clean = value.starts_with?("#") ? value[1..] : value
+
+      case clean.size
+      when 3
+        r = "#{clean[0]}#{clean[0]}".to_i?(16)
+        g = "#{clean[1]}#{clean[1]}".to_i?(16)
+        b = "#{clean[2]}#{clean[2]}".to_i?(16)
+        return default unless r && g && b
+
+        Qt6::Color.new(r, g, b, 255)
+      when 4
+        a = "#{clean[0]}#{clean[0]}".to_i?(16)
+        r = "#{clean[1]}#{clean[1]}".to_i?(16)
+        g = "#{clean[2]}#{clean[2]}".to_i?(16)
+        b = "#{clean[3]}#{clean[3]}".to_i?(16)
+        return default unless a && r && g && b
+
+        Qt6::Color.new(r, g, b, a)
+      when 6
+        r = clean[0, 2].to_i?(16)
+        g = clean[2, 2].to_i?(16)
+        b = clean[4, 2].to_i?(16)
+        return default unless r && g && b
+
+        Qt6::Color.new(r, g, b, 255)
+      when 8
+        a = clean[0, 2].to_i?(16)
+        r = clean[2, 2].to_i?(16)
+        g = clean[4, 2].to_i?(16)
+        b = clean[6, 2].to_i?(16)
+        return default unless a && r && g && b
+
+        Qt6::Color.new(r, g, b, a)
+      else
+        default
+      end
+    end
+
+    private def object_opacity(value : JSON::Any?, default : Float64 = 1.0) : Float64
+      opacity = json_number(value)
+      return default unless opacity
+
+      if opacity > 1.0
+        (opacity / 100.0).clamp(0.0, 1.0)
+      else
+        opacity.clamp(0.0, 1.0)
+      end
+    end
+
+    private def layer_opacity_percent(value : JSON::Any?, default : Int32 = 100) : Int32
+      opacity = json_number(value)
+      return default unless opacity
+
+      if opacity > 1.0
+        opacity.round.to_i32.clamp(0, 100)
+      else
+        (opacity * 100.0).round.to_i32.clamp(0, 100)
+      end
+    end
+
+    private def normalize_orientation(value : String?) : String
+      value == "flat" ? "flat" : "pointy"
+    end
+
+    private def normalize_row_offset(value : String?) : String
+      value == "odd" ? "odd" : "even"
+    end
+
+    private def normalize_line_type(value : String?) : String
+      case value
+      when "dashed", "dotted"
+        value.not_nil!
+      when "lined"
+        "dashed"
+      else
+        "solid"
+      end
+    end
+
+    private def normalize_alignment(value : String?) : String
+      case value
+      when "center", "right"
+        value.not_nil!
+      else
+        "left"
+      end
+    end
+
+    private def layout_origin_x : Float64
+      @hex_radius * 2.0
+    end
+
+    private def layout_origin_y : Float64
+      @hex_radius * 2.0
+    end
+
+    private def hex_corner_start_angle : Float64
+      @grid_orientation == "flat" ? 0.0 : Math::PI / 6.0
     end
 
     def hex_label(col : Int32, row : Int32) : String

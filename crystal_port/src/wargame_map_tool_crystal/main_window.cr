@@ -269,9 +269,14 @@ module WargameMapToolCrystal
       open_action.on_triggered do
         if open_dialog.exec == Qt6::DialogCode::Accepted
           selected = open_dialog.selected_file
-          @state.source_path = selected.empty? ? nil : selected
-          refresh_inspector
-          handle_status(selected.empty? ? "Open canceled" : "Selected #{File.basename(selected)} for future import work")
+
+          if selected.empty?
+            handle_status("Open canceled")
+          elsif message = @state.load_hexmap(selected)
+            refresh_all(message)
+          else
+            handle_status("Hexmap import failed")
+          end
         else
           handle_status("Open canceled")
         end
