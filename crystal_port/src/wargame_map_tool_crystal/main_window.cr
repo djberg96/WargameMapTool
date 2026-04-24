@@ -451,6 +451,21 @@ module WargameMapToolCrystal
         end
       end
 
+      reset_asset_transform_action = Qt6::Action.new("Reset Selected Asset Transform", @widget)
+      reset_asset_transform_action.on_triggered do
+        object = @state.selected_asset_object if @state.selected_asset_present?
+        unless object
+          handle_status("Select an asset to reset it")
+          next
+        end
+
+        object.scale = 0.5
+        object.rotation = 0.0
+        object.opacity = 1.0
+        @state.snap_asset_to_hex(object) if object.snap_to_hex
+        refresh_all("Reset asset transform")
+      end
+
       delete_asset_action = Qt6::Action.new("Delete Selected Asset…", @widget)
       delete_asset_action.on_triggered do
         object = @state.selected_asset_object if @state.selected_asset_present?
@@ -538,6 +553,7 @@ module WargameMapToolCrystal
       edit_menu << edit_text_action
       edit_menu << delete_text_action
       edit_menu << duplicate_asset_action
+      edit_menu << reset_asset_transform_action
       edit_menu << replace_asset_image_action
       edit_menu << delete_asset_action
 
