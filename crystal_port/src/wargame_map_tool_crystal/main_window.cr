@@ -86,6 +86,7 @@ module WargameMapToolCrystal
     @source_label : Qt6::Label
     @background_label : Qt6::Label
     @asset_label : Qt6::Label
+    @asset_path_label : Qt6::Label
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
@@ -127,6 +128,7 @@ module WargameMapToolCrystal
       @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
+      @asset_path_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
@@ -816,6 +818,8 @@ module WargameMapToolCrystal
       asset_controls.vbox do |column|
         column << Qt6::Label.new("Selected Asset")
         column << @asset_label
+        column << Qt6::Label.new("Image Path")
+        column << @asset_path_label
         column << @asset_snap_check
         column << Qt6::Label.new("Scale")
         column << @asset_scale_spin
@@ -918,6 +922,13 @@ module WargameMapToolCrystal
                             else
                               "Asset: #{object.label}"
                             end
+        @asset_label.tool_tip = object.image_path || object.label
+        @asset_path_label.text = if path = object.image_path
+                                   path
+                                 else
+                                   "Path: none"
+                                 end
+        @asset_path_label.tool_tip = @asset_path_label.text
         @asset_snap_check.checked = object.snap_to_hex
         @asset_scale_spin.value = object.scale
         @asset_rotation_spin.value = object.rotation
@@ -928,6 +939,9 @@ module WargameMapToolCrystal
         @asset_opacity_spin.enabled = true
       else
         @asset_label.text = "Asset: none selected"
+        @asset_label.tool_tip = ""
+        @asset_path_label.text = "Path: none selected"
+        @asset_path_label.tool_tip = ""
         @asset_snap_check.checked = true
         @asset_scale_spin.value = 1.0
         @asset_rotation_spin.value = 0.0

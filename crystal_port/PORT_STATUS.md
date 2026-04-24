@@ -21,7 +21,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - Crystal slice JSON save/load for background image state and transform
 - object-backed path layer with per-segment color, width, line style, opacity, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
-- explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, and snap editing
+- explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility
 - object-backed text layer with renderable text objects instead of hard-coded label tuples
 - add-text action plus Crystal slice JSON persistence for text objects
 - basic hovered-text edit/delete actions with hover feedback in the inspector
