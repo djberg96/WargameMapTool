@@ -98,20 +98,112 @@ module WargameMapToolCrystal
     end
   end
 
+  class PathObject
+    property col_a : Int32
+    property row_a : Int32
+    property col_b : Int32
+    property row_b : Int32
+    property color : Qt6::Color
+    property width : Float64
+    property line_type : String
+    property opacity : Float64
+
+    def initialize(
+      @col_a : Int32,
+      @row_a : Int32,
+      @col_b : Int32,
+      @row_b : Int32,
+      @color : Qt6::Color = Qt6::Color.new(174, 82, 54),
+      @width : Float64 = 3.0,
+      @line_type : String = "solid",
+      @opacity : Float64 = 1.0,
+    )
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "col_a", @col_a
+        json.field "row_a", @row_a
+        json.field "col_b", @col_b
+        json.field "row_b", @row_b
+        json.field "width", @width
+        json.field "line_type", @line_type
+        json.field "opacity", @opacity
+        json.field "color" do
+          json.object do
+            json.field "red", @color.red
+            json.field "green", @color.green
+            json.field "blue", @color.blue
+            json.field "alpha", @color.alpha
+          end
+        end
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      color_data = data["color"]?
+      color = Qt6::Color.new(
+        (color_data.try { |value| value["red"]?.try(&.as_i?) } || 174).to_i32,
+        (color_data.try { |value| value["green"]?.try(&.as_i?) } || 82).to_i32,
+        (color_data.try { |value| value["blue"]?.try(&.as_i?) } || 54).to_i32,
+        (color_data.try { |value| value["alpha"]?.try(&.as_i?) } || 255).to_i32,
+      )
+
+      new(
+        (data["col_a"]?.try(&.as_i?) || 0).to_i32,
+        (data["row_a"]?.try(&.as_i?) || 0).to_i32,
+        (data["col_b"]?.try(&.as_i?) || 0).to_i32,
+        (data["row_b"]?.try(&.as_i?) || 0).to_i32,
+        color,
+        data["width"]?.try(&.as_f?) || 3.0,
+        data["line_type"]?.try(&.as_s?) || "solid",
+        data["opacity"]?.try(&.as_f?) || 1.0,
+      )
+    end
+  end
+
   class PathLayer < MapLayer
+    getter objects : Array(PathObject)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of PathObject
+    end
+
+    def add_path(object : PathObject) : Nil
+      @objects << object
+    end
+
+    def clear_paths : Nil
+      @objects.clear
+    end
+
+    def path_count : Int32
+      @objects.size.to_i32
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
-      painter.pen = Qt6::QPen.new(Qt6::Color.new(174, 82, 54), 3.0)
-      points = state.route_hexes.map do |hex|
-        state.screen_point(state.hex_center(hex[0], hex[1]))
-      end
+      layer_opacity = opacity / 100.0
 
-      points.each_cons(2) do |segment|
-        painter.draw_line(segment[0], segment[1])
-      end
+      @objects.each do |object|
+        start_point = state.screen_point(state.hex_center(object.col_a, object.row_a))
+        end_point = state.screen_point(state.hex_center(object.col_b, object.row_b))
+        pen = Qt6::QPen.new(object.color, object.width)
+        pen.style = case object.line_type
+                    when "dashed"
+                      Qt6::PenStyle::DashLine
+                    when "dotted"
+                      Qt6::PenStyle::DotLine
+                    else
+                      Qt6::PenStyle::SolidLine
+                    end
 
-      painter.brush = Qt6::Color.new(174, 82, 54)
-      points.each do |point|
-        painter.draw_ellipse(Qt6::RectF.new(point.x - 4.0, point.y - 4.0, 8.0, 8.0))
+        painter.save
+        painter.pen = pen
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.opacity = (layer_opacity * object.opacity).clamp(0.0, 1.0)
+        painter.draw_line(start_point, end_point)
+        painter.restore
       end
     end
   end

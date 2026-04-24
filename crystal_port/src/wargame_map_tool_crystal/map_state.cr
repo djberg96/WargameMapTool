@@ -111,6 +111,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def path_layer : PathLayer?
+      @layers.each do |layer|
+        return layer.as(PathLayer) if layer.is_a?(PathLayer)
+      end
+
+      nil
+    end
+
     def text_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(TextLayer)
@@ -197,6 +205,19 @@ module WargameMapToolCrystal
               end
             end
           end
+
+          json.field "path_objects" do
+            if layer = path_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
         end
       end)
 
@@ -236,22 +257,42 @@ module WargameMapToolCrystal
         end
       end
 
+      data["path_objects"]?.try(&.as_a?).try do |objects|
+        if layer = path_layer
+          layer.clear_paths
+          objects.each do |object_data|
+            layer.add_path(PathObject.from_json(object_data))
+          end
+        end
+      end
+
       true
     rescue
       false
     end
 
     private def build_default_layers : Array(MapLayer)
+      path_layer = PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54))
+      seed_default_path_objects(path_layer)
+
       text_layer = TextLayer.new("Operational Labels", "Text", true, Qt6::Color.new(66, 78, 118))
       seed_default_text_objects(text_layer)
 
       [
         BackgroundLayer.new("Background Wash", "Background", true, Qt6::Color.new(200, 184, 148)),
         TerrainLayer.new("Terrain Fill", "Terrain", true, Qt6::Color.new(86, 132, 92)),
-        PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54)),
+        path_layer,
         text_layer,
         AssetLayer.new("Counters", "Assets", true, Qt6::Color.new(94, 100, 112)),
       ] of MapLayer
+    end
+
+    private def seed_default_path_objects(layer : PathLayer) : Nil
+      layer.add_path(PathObject.new(1, 3, 4, 4, color: layer.accent, width: 3.0))
+      layer.add_path(PathObject.new(4, 4, 7, 5, color: layer.accent, width: 3.0))
+      layer.add_path(PathObject.new(7, 5, 10, 7, color: layer.accent, width: 3.0, line_type: "dashed"))
+      layer.add_path(PathObject.new(10, 7, 13, 8, color: layer.accent, width: 3.0))
+      layer.add_path(PathObject.new(13, 8, 16, 10, color: layer.accent, width: 3.0, line_type: "dotted", opacity: 0.9))
     end
 
     private def seed_default_text_objects(layer : TextLayer) : Nil
@@ -372,10 +413,6 @@ module WargameMapToolCrystal
     def hex_label(col : Int32, row : Int32) : String
       letter = ('A'.ord + col).chr
       "#{letter}#{(row + 1).to_s.rjust(2, '0')}"
-    end
-
-    def route_hexes : Array(Tuple(Int32, Int32))
-      [{1, 3}, {4, 4}, {7, 5}, {10, 7}, {13, 8}, {16, 10}] of Tuple(Int32, Int32)
     end
 
     def asset_hexes : Array(Tuple(Int32, Int32))
