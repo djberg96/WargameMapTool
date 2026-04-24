@@ -472,6 +472,41 @@ module WargameMapToolCrystal
         end
       end
 
+      clear_fills_action = Qt6::Action.new("Clear All Fills…", @widget)
+      clear_fills_action.on_triggered do
+        layer = @state.terrain_layer
+        unless layer
+          handle_status("Terrain layer unavailable")
+          next
+        end
+
+        if layer.fill_count <= 0
+          handle_status("No fills to clear")
+          next
+        end
+
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Clear All Fills",
+          text: "Clear #{layer.fill_count} painted hexes?",
+          informative_text: "This removes every terrain fill override from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes
+          layer.clear_fills
+          if index = @state.terrain_layer_index
+            @state.set_active_layer(index)
+            @layer_tree.current_index = @layer_model.index(index, 0)
+          end
+          refresh_all("Cleared all terrain fills")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Clear fills canceled")
+        else
+          handle_status("Clear fills failed")
+        end
+      end
+
       replace_asset_image_action = Qt6::Action.new("Replace Selected Asset Image…", @widget)
       replace_asset_image_action.on_triggered do
         object = @state.selected_asset_object if @state.selected_asset_present?
@@ -617,6 +652,7 @@ module WargameMapToolCrystal
       edit_menu << delete_text_action
       edit_menu << duplicate_path_action
       edit_menu << delete_path_action
+      edit_menu << clear_fills_action
       edit_menu << duplicate_asset_action
       edit_menu << reset_asset_transform_action
       edit_menu << replace_asset_image_action
@@ -1256,7 +1292,7 @@ module WargameMapToolCrystal
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
-                               "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius."
+                               "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else
                                "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
                              end
