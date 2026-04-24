@@ -149,6 +149,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def path_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(PathLayer)
+      end
+
+      nil
+    end
+
     def add_text_label(text : String) : Bool
       clean_text = text.strip
       return false if clean_text.empty?
@@ -205,6 +213,45 @@ module WargameMapToolCrystal
 
     def clear_path_selection : Nil
       @selected_path_object = nil
+    end
+
+    def duplicate_selected_path : PathObject?
+      source = @selected_path_object
+      layer = path_layer
+      return nil unless source && layer
+
+      delta_col = 1
+      delta_row = 0
+
+      if hover = @hover_hex
+        delta_col = hover[0] - source.col_a
+        delta_row = hover[1] - source.row_a
+      elsif !valid_hex_coord?(source.col_a + delta_col, source.row_a + delta_row) || !valid_hex_coord?(source.col_b + delta_col, source.row_b + delta_row)
+        delta_col = 0
+        delta_row = 1
+      end
+
+      unless valid_hex_coord?(source.col_a + delta_col, source.row_a + delta_row) && valid_hex_coord?(source.col_b + delta_col, source.row_b + delta_row)
+        delta_col = 0
+        delta_row = 0
+      end
+
+      object = PathObject.new(
+        source.col_a + delta_col,
+        source.row_a + delta_row,
+        source.col_b + delta_col,
+        source.row_b + delta_row,
+        color: source.color,
+        width: source.width,
+        line_type: source.line_type,
+        opacity: source.opacity,
+      )
+
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @selected_path_object = object
+      layer.add_path(object)
+      object
     end
 
     def duplicate_selected_asset : AssetObject?
@@ -626,6 +673,10 @@ module WargameMapToolCrystal
       end
 
       best
+    end
+
+    private def valid_hex_coord?(col : Int32, row : Int32) : Bool
+      col >= 0 && col < @cols && row >= 0 && row < @rows
     end
 
     def hex_label(col : Int32, row : Int32) : String

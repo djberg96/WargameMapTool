@@ -417,6 +417,51 @@ module WargameMapToolCrystal
         end
       end
 
+      duplicate_path_action = Qt6::Action.new("Duplicate Selected Path", @widget)
+      duplicate_path_action.on_triggered do
+        unless @state.selected_path_present?
+          handle_status("Select a path to duplicate it")
+          next
+        end
+
+        if object = @state.duplicate_selected_path
+          if index = @state.path_layer_index
+            @state.set_active_layer(index)
+            @layer_tree.current_index = @layer_model.index(index, 0)
+          end
+          refresh_all("Duplicated path #{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}")
+        else
+          handle_status("Path duplicate failed")
+        end
+      end
+
+      delete_path_action = Qt6::Action.new("Delete Selected Path…", @widget)
+      delete_path_action.on_triggered do
+        object = @state.selected_path_object if @state.selected_path_present?
+        unless object
+          handle_status("Select a path to delete it")
+          next
+        end
+
+        label = "#{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Path",
+          text: "Delete path #{label}?",
+          informative_text: "This removes the selected path segment from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.path_layer) && layer.remove_path(object)
+          @state.clear_path_selection
+          refresh_all("Deleted path #{label}")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Path delete failed")
+        end
+      end
+
       replace_asset_image_action = Qt6::Action.new("Replace Selected Asset Image…", @widget)
       replace_asset_image_action.on_triggered do
         object = @state.selected_asset_object if @state.selected_asset_present?
@@ -560,6 +605,8 @@ module WargameMapToolCrystal
       edit_menu << add_asset_action
       edit_menu << edit_text_action
       edit_menu << delete_text_action
+      edit_menu << duplicate_path_action
+      edit_menu << delete_path_action
       edit_menu << duplicate_asset_action
       edit_menu << reset_asset_transform_action
       edit_menu << replace_asset_image_action
