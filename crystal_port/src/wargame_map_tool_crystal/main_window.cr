@@ -430,6 +430,25 @@ module WargameMapToolCrystal
         end
       end
 
+      duplicate_asset_action = Qt6::Action.new("Duplicate Selected Asset", @widget)
+      duplicate_asset_action.shortcut = "Ctrl+Shift+D"
+      duplicate_asset_action.on_triggered do
+        unless @state.selected_asset_present?
+          handle_status("Select an asset to duplicate it")
+          next
+        end
+
+        if object = @state.duplicate_selected_asset
+          if index = @state.asset_layer_index
+            @state.set_active_layer(index)
+            @layer_tree.current_index = @layer_model.index(index, 0)
+          end
+          refresh_all("Duplicated asset #{object.label}")
+        else
+          handle_status("Asset duplicate failed")
+        end
+      end
+
       delete_asset_action = Qt6::Action.new("Delete Selected Asset…", @widget)
       delete_asset_action.on_triggered do
         object = @state.selected_asset_object if @state.selected_asset_present?
@@ -516,6 +535,7 @@ module WargameMapToolCrystal
       edit_menu << add_asset_action
       edit_menu << edit_text_action
       edit_menu << delete_text_action
+      edit_menu << duplicate_asset_action
       edit_menu << replace_asset_image_action
       edit_menu << delete_asset_action
 

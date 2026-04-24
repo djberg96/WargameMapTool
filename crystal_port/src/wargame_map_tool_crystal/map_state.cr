@@ -190,6 +190,43 @@ module WargameMapToolCrystal
       true
     end
 
+    def duplicate_selected_asset : AssetObject?
+      source = @selected_asset_object
+      layer = asset_layer
+      return nil unless source && layer
+
+      x = source.x
+      y = source.y
+
+      if hover = @hover_hex
+        anchor = hex_center(hover[0], hover[1])
+        x = anchor.x
+        y = anchor.y
+      elsif source.snap_to_hex
+        x += horizontal_step
+      else
+        x += 24.0
+        y += 18.0
+      end
+
+      object = AssetObject.new(
+        x,
+        y,
+        source.image_path,
+        scale: source.scale,
+        rotation: source.rotation,
+        opacity: source.opacity,
+        snap_to_hex: source.snap_to_hex,
+      )
+
+      snap_asset_to_hex(object) if object.snap_to_hex
+
+      layer.add_asset(object)
+      @selected_text_object = nil
+      @selected_asset_object = object
+      object
+    end
+
     def selected_text_present? : Bool
       object = @selected_text_object
       layer = text_layer
