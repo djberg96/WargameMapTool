@@ -115,6 +115,7 @@ module WargameMapToolCrystal
             end
           elsif @drag_moved && @drag_mode == "asset_move"
             if object = @drag_asset_object
+              @state.snap_asset_to_hex(object) if object.snap_to_hex
               refresh("Moved asset '#{object.label}'")
             end
           elsif @drag_moved

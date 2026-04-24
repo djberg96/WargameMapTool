@@ -89,6 +89,7 @@ module WargameMapToolCrystal
     @hover_label : Qt6::Label
     @layer_visible_check : Qt6::CheckBox
     @selection_note : Qt6::Label
+    @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
     @asset_rotation_spin : Qt6::DoubleSpinBox
     @asset_opacity_spin : Qt6::DoubleSpinBox
@@ -129,6 +130,7 @@ module WargameMapToolCrystal
       @hover_label = Qt6::Label.new
       @layer_visible_check = Qt6::CheckBox.new("Visible")
       @selection_note = Qt6::Label.new
+      @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
       @asset_rotation_spin = Qt6::DoubleSpinBox.new
       @asset_opacity_spin = Qt6::DoubleSpinBox.new
@@ -681,6 +683,15 @@ module WargameMapToolCrystal
         @canvas.refresh("Updated asset opacity")
       end
 
+      @asset_snap_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless object = (@state.selected_asset_object if @state.selected_asset_present?)
+
+        object.snap_to_hex = checked
+        @state.snap_asset_to_hex(object) if checked
+        @canvas.refresh(checked ? "Asset snapping enabled" : "Asset snapping disabled")
+      end
+
       @text_value_edit.placeholder_text = "Select a text label"
       @text_value_edit.on_text_changed do |value|
         next if @updating_panel
@@ -785,6 +796,7 @@ module WargameMapToolCrystal
       asset_controls.vbox do |column|
         column << Qt6::Label.new("Selected Asset")
         column << @asset_label
+        column << @asset_snap_check
         column << Qt6::Label.new("Scale")
         column << @asset_scale_spin
         column << Qt6::Label.new("Rotation")
@@ -886,17 +898,21 @@ module WargameMapToolCrystal
                             else
                               "Asset: #{object.label}"
                             end
+        @asset_snap_check.checked = object.snap_to_hex
         @asset_scale_spin.value = object.scale
         @asset_rotation_spin.value = object.rotation
         @asset_opacity_spin.value = object.opacity
+        @asset_snap_check.enabled = true
         @asset_scale_spin.enabled = true
         @asset_rotation_spin.enabled = true
         @asset_opacity_spin.enabled = true
       else
         @asset_label.text = "Asset: none selected"
+        @asset_snap_check.checked = true
         @asset_scale_spin.value = 1.0
         @asset_rotation_spin.value = 0.0
         @asset_opacity_spin.value = 1.0
+        @asset_snap_check.enabled = false
         @asset_scale_spin.enabled = false
         @asset_rotation_spin.enabled = false
         @asset_opacity_spin.enabled = false

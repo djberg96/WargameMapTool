@@ -182,6 +182,8 @@ module WargameMapToolCrystal
       object = AssetObject.new(anchor.x, anchor.y, clean_path, scale: scale)
       return false unless object.has_image?
 
+      snap_asset_to_hex(object) if object.snap_to_hex
+
       layer.add_asset(object)
       @selected_text_object = nil
       @selected_asset_object = object
@@ -240,6 +242,15 @@ module WargameMapToolCrystal
       return nil unless screen && layer
 
       layer.nearest_asset(self, screen)
+    end
+
+    def snap_asset_to_hex(object : AssetObject) : Bool
+      center = nearest_hex_center(Qt6::PointF.new(object.x, object.y))
+      return false unless center
+
+      object.x = center.x
+      object.y = center.y
+      true
     end
 
     def save_slice(path : String) : Nil
@@ -521,6 +532,27 @@ module WargameMapToolCrystal
 
       return nil unless best
       best_distance <= @hex_radius * 1.15 ? best : nil
+    end
+
+    def nearest_hex_center(world : Qt6::PointF) : Qt6::PointF?
+      best = nil
+      best_distance = Float64::INFINITY
+
+      @rows.times do |row|
+        @cols.times do |col|
+          center = hex_center(col, row)
+          dx = center.x - world.x
+          dy = center.y - world.y
+          distance = Math.sqrt(dx * dx + dy * dy)
+
+          if distance < best_distance
+            best_distance = distance
+            best = center
+          end
+        end
+      end
+
+      best
     end
 
     def hex_label(col : Int32, row : Int32) : String
