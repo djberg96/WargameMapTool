@@ -19,7 +19,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - importable background image layer with offset/scale-backed rendering
 - inspector controls for background offset and scale
 - Crystal slice JSON save/load for background image state and transform
-- object-backed path layer with explicit Path-tool selection, two-click path creation, preview feedback, endpoint drag reshaping, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
+- object-backed path layer with explicit Path-tool selection, two-click path creation, preview feedback, endpoint drag reshaping, keyboard delete/cancel support, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
 - explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/reset/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility
 - object-backed text layer with renderable text objects instead of hard-coded label tuples

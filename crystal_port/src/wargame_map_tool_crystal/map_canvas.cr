@@ -214,6 +214,26 @@ module WargameMapToolCrystal
         when 48
           @state.reset_view
           refresh("View reset")
+        when 16777216
+          if @state.active_tool == "Path" && (anchor = @state.pending_path_anchor)
+            @state.clear_pending_path_anchor
+            refresh("Canceled pending path at #{@state.hex_label(anchor[0], anchor[1])}")
+          end
+        when 16777219, 16777223
+          if @state.active_tool == "Path"
+            if anchor = @state.pending_path_anchor
+              @state.clear_pending_path_anchor
+              refresh("Canceled pending path at #{@state.hex_label(anchor[0], anchor[1])}")
+            elsif object = (@state.selected_path_object if @state.selected_path_present?)
+              label = "#{@state.hex_label(object.col_a, object.row_a)}-#{@state.hex_label(object.col_b, object.row_b)}"
+              if (layer = @state.path_layer) && layer.remove_path(object)
+                @state.clear_path_selection
+                refresh("Deleted path #{label}")
+              else
+                refresh("Path delete failed")
+              end
+            end
+          end
         end
       end
 
