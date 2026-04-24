@@ -73,6 +73,8 @@ module WargameMapToolCrystal
     @grid_action : Qt6::Action
     @coords_action : Qt6::Action
     @asset_action : Qt6::Action
+    @show_layers_action : Qt6::Action
+    @show_inspector_action : Qt6::Action
     @layer_model : Qt6::StandardItemModel
     @layer_tree : Qt6::TreeView
     @layer_selection : Qt6::ItemSelectionModel
@@ -105,6 +107,8 @@ module WargameMapToolCrystal
       @grid_action = Qt6::Action.new("Show Grid", @widget)
       @coords_action = Qt6::Action.new("Show Coordinates", @widget)
       @asset_action = Qt6::Action.new("Show Counters", @widget)
+      @show_layers_action = Qt6::Action.new("Show Layers", @widget)
+      @show_inspector_action = Qt6::Action.new("Show Inspector", @widget)
       @layer_model = Qt6::StandardItemModel.new(@widget)
       @layer_tree = Qt6::TreeView.new
       @layer_selection = Qt6::ItemSelectionModel.new(@layer_model, @widget)
@@ -422,6 +426,9 @@ module WargameMapToolCrystal
       view_menu << @grid_action
       view_menu << @coords_action
       view_menu << @asset_action
+      view_menu.add_separator
+      view_menu << @show_layers_action
+      view_menu << @show_inspector_action
 
       help_menu << about_action
     end
@@ -472,14 +479,18 @@ module WargameMapToolCrystal
       end
 
       panel = Qt6::Widget.new
+      panel.minimum_width = 250
       panel.vbox do |column|
         column << Qt6::Label.new("Python parity target: layer stack + inspector sync")
         column << @layer_tree
       end
 
       dock = Qt6::DockWidget.new("Layers", @widget)
+      dock.minimum_width = 250
       dock.widget = panel
       @widget.add_dock_widget(dock, Qt6::DockArea::Left)
+      @show_layers_action = dock.toggle_view_action
+      @show_layers_action.shortcut = "Ctrl+1"
     end
 
     private def build_inspector_dock : Nil
@@ -646,6 +657,7 @@ module WargameMapToolCrystal
       end
 
       panel = Qt6::Widget.new
+      panel.minimum_width = 320
       panel.vbox do |column|
         column << Qt6::Label.new("Crystal Port Inspector")
         column << @project_label
@@ -662,8 +674,11 @@ module WargameMapToolCrystal
       end
 
       dock = Qt6::DockWidget.new("Inspector", @widget)
+      dock.minimum_width = 320
       dock.widget = panel
       @widget.add_dock_widget(dock, Qt6::DockArea::Right)
+      @show_inspector_action = dock.toggle_view_action
+      @show_inspector_action.shortcut = "Ctrl+2"
     end
 
     private def refresh_all(message : String) : Nil
