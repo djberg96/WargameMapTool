@@ -6,6 +6,8 @@ module WargameMapToolCrystal
     CLICK_SELECTION_THRESHOLD = 5.0
 
     @press_pointer : Qt6::PointF?
+    @drag_text_object : TextObject?
+    @drag_mode : String
 
     getter widget : Qt6::EventWidget
 
@@ -15,6 +17,8 @@ module WargameMapToolCrystal
       @widget.focus_policy = Qt6::FocusPolicy::StrongFocus
       @widget.mouse_tracking = true
       @press_pointer = nil
+      @drag_text_object = nil
+      @drag_mode = "pan"
       @drag_moved = false
       wire_events
     end
@@ -31,7 +35,19 @@ module WargameMapToolCrystal
         @state.dragging = true
         @state.last_pointer = event.position
         @press_pointer = event.position
+        @drag_text_object = nil
+        @drag_mode = "pan"
         @drag_moved = false
+
+        if @state.active_tool == "Text" && @state.selected_text_present?
+          selected = @state.selected_text_object
+          hovered = @state.text_layer.try(&.nearest_text(@state, event.position))
+          if selected && hovered == selected
+            @drag_text_object = selected
+            @drag_mode = "text_move"
+          end
+        end
+
         @widget.set_focus
       end
 
@@ -46,8 +62,15 @@ module WargameMapToolCrystal
           if @drag_moved
             dx = event.position.x - @state.last_pointer.x
             dy = event.position.y - @state.last_pointer.y
-            @state.pan_x += dx
-            @state.pan_y += dy
+
+            if @drag_mode == "text_move" && (object = @drag_text_object)
+              object.x += dx / @state.zoom
+              object.y += dy / @state.zoom
+            else
+              @state.pan_x += dx
+              @state.pan_y += dy
+            end
+
             @state.last_pointer = event.position
             refresh
           end
@@ -66,12 +89,16 @@ module WargameMapToolCrystal
               @state.clear_text_selection
               refresh("Cleared text selection")
             end
+          elsif @drag_moved && @drag_mode == "text_move" && (object = @drag_text_object)
+            refresh("Moved text '#{object.text}'")
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
 
           @state.dragging = false
           @press_pointer = nil
+          @drag_text_object = nil
+          @drag_mode = "pan"
           @drag_moved = false
         end
       end
