@@ -11,6 +11,7 @@ module WargameMapToolCrystal
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
     @hovered_path_endpoint : String?
+    @fill_drag_count : Int32
     @drag_mode : String
 
     getter widget : Qt6::EventWidget
@@ -26,6 +27,7 @@ module WargameMapToolCrystal
       @drag_path_object = nil
       @drag_path_endpoint = nil
       @hovered_path_endpoint = nil
+      @fill_drag_count = 0
       @drag_mode = "pan"
       @drag_moved = false
       wire_events
@@ -47,10 +49,26 @@ module WargameMapToolCrystal
         @drag_asset_object = nil
         @drag_path_object = nil
         @drag_path_endpoint = nil
+        @fill_drag_count = 0
         @drag_mode = "pan"
         @drag_moved = false
 
-        if @state.active_tool == "Text" && @state.selected_text_present?
+        if @state.active_tool == "Fill"
+          if hover = @state.pick_hex(event.position)
+            @state.hover_hex = hover
+            if event.button == 1
+              if paint_fill(hover)
+                @fill_drag_count = 1
+              end
+              @drag_mode = "fill_paint"
+            elsif event.button == 2
+              if clear_fill(hover)
+                @fill_drag_count = 1
+              end
+              @drag_mode = "fill_erase"
+            end
+          end
+        elsif @state.active_tool == "Text" && @state.selected_text_present?
           selected = @state.selected_text_object
           hovered = @state.text_layer.try(&.nearest_text(@state, event.position))
           if selected && hovered == selected
@@ -91,6 +109,18 @@ module WargameMapToolCrystal
             if @drag_mode == "text_move" && (object = @drag_text_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
+            elsif @drag_mode == "fill_paint"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              if hover = @state.hover_hex
+                @fill_drag_count += 1 if paint_fill(hover)
+              end
+            elsif @drag_mode == "fill_erase"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              if hover = @state.hover_hex
+                @fill_drag_count += 1 if clear_fill(hover)
+              end
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
@@ -126,7 +156,23 @@ module WargameMapToolCrystal
       @widget.on_mouse_release do |event|
         update_hover(event.position)
         if @state.dragging
-          if !@drag_moved && @state.active_tool == "Text"
+          if @drag_mode == "fill_paint"
+            count = @fill_drag_count
+            label = if hover = @state.hover_hex
+                      @state.hex_label(hover[0], hover[1])
+                    else
+                      "terrain"
+                    end
+            refresh(count <= 1 ? "Filled #{label}" : "Filled #{count} hexes")
+          elsif @drag_mode == "fill_erase"
+            count = @fill_drag_count
+            label = if hover = @state.hover_hex
+                      @state.hex_label(hover[0], hover[1])
+                    else
+                      "terrain"
+                    end
+            refresh(count <= 1 ? "Cleared fill #{label}" : "Cleared #{count} fills")
+          elsif !@drag_moved && @state.active_tool == "Text"
             if object = @state.select_hovered_text
               refresh("Selected text '#{object.text}'")
             else
@@ -187,6 +233,7 @@ module WargameMapToolCrystal
           @drag_asset_object = nil
           @drag_path_object = nil
           @drag_path_endpoint = nil
+          @fill_drag_count = 0
           @drag_mode = "pan"
           @drag_moved = false
         end
@@ -358,6 +405,18 @@ module WargameMapToolCrystal
       painter.draw_ellipse(Qt6::RectF.new(center.x - 15.0, center.y - 15.0, 30.0, 30.0))
       painter.pen = Qt6::Color.new(46, 48, 54)
       painter.draw_text(Qt6::PointF.new(center.x + 10.0, center.y + 18.0), @state.active_tool)
+    end
+
+    private def paint_fill(hex : Tuple(Int32, Int32)) : Bool
+      return false unless layer = @state.terrain_layer
+
+      layer.set_fill(hex[0], hex[1], layer.accent)
+    end
+
+    private def clear_fill(hex : Tuple(Int32, Int32)) : Bool
+      return false unless layer = @state.terrain_layer
+
+      layer.clear_fill(hex[0], hex[1])
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil

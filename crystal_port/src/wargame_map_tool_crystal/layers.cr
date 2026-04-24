@@ -85,6 +85,37 @@ module WargameMapToolCrystal
   end
 
   class TerrainLayer < MapLayer
+    getter fills : Hash(Tuple(Int32, Int32), Qt6::Color)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @fills = {} of Tuple(Int32, Int32) => Qt6::Color
+    end
+
+    def set_fill(col : Int32, row : Int32, color : Qt6::Color) : Bool
+      existing = @fills[{col, row}]?
+      return false if existing && existing.red == color.red && existing.green == color.green && existing.blue == color.blue && existing.alpha == color.alpha
+
+      @fills[{col, row}] = color
+      true
+    end
+
+    def clear_fill(col : Int32, row : Int32) : Bool
+      @fills.delete({col, row}) != nil
+    end
+
+    def clear_fills : Nil
+      @fills.clear
+    end
+
+    def fill_at(col : Int32, row : Int32) : Qt6::Color?
+      @fills[{col, row}]?
+    end
+
+    def fill_count : Int32
+      @fills.size.to_i32
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
       state.rows.times do |row|
         state.cols.times do |col|
@@ -94,6 +125,20 @@ module WargameMapToolCrystal
           painter.brush = state.terrain_color(col, row)
           painter.draw_ellipse(Qt6::RectF.new(center.x - radius, center.y - radius, radius * 2.0, radius * 2.0))
         end
+      end
+
+      layer_opacity = opacity / 100.0
+      @fills.each do |coords, color|
+        polygon = Qt6::QPolygonF.new(
+          state.hex_points(coords[0], coords[1]).map { |point| state.screen_point(point) }
+        )
+
+        painter.save
+        painter.pen = Qt6::QPen.new(color, 1.0)
+        painter.brush = color
+        painter.opacity = (layer_opacity * 0.82).clamp(0.0, 1.0)
+        painter.draw_polygon(polygon)
+        painter.restore
       end
     end
   end

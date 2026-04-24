@@ -85,6 +85,7 @@ module WargameMapToolCrystal
     @project_label : Qt6::Label
     @source_label : Qt6::Label
     @background_label : Qt6::Label
+    @terrain_fill_label : Qt6::Label
     @path_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
@@ -110,6 +111,7 @@ module WargameMapToolCrystal
     @background_offset_x_spin : Qt6::DoubleSpinBox
     @background_offset_y_spin : Qt6::DoubleSpinBox
     @background_scale_spin : Qt6::DoubleSpinBox
+    @terrain_color_button : Qt6::PushButton
     @updating_panel : Bool
 
     def initialize
@@ -132,6 +134,7 @@ module WargameMapToolCrystal
       @project_label = Qt6::Label.new
       @source_label = Qt6::Label.new
       @background_label = Qt6::Label.new
+      @terrain_fill_label = Qt6::Label.new
       @path_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
@@ -157,6 +160,7 @@ module WargameMapToolCrystal
       @background_offset_x_spin = Qt6::DoubleSpinBox.new
       @background_offset_y_spin = Qt6::DoubleSpinBox.new
       @background_scale_spin = Qt6::DoubleSpinBox.new
+      @terrain_color_button = Qt6::PushButton.new("Fill Color")
       @updating_panel = false
 
       @status_bar = @widget.status_bar
@@ -650,6 +654,11 @@ module WargameMapToolCrystal
         action.checked = tool_name == @state.active_tool
         action.on_triggered do
           @state.clear_pending_path_anchor unless tool_name == "Path"
+          if tool_name == "Fill"
+            if index = @state.terrain_layer_index
+              @state.set_active_layer(index)
+            end
+          end
           @state.active_tool = tool_name
           refresh_inspector
           @canvas.refresh("#{tool_name} tool active")
@@ -742,6 +751,19 @@ module WargameMapToolCrystal
 
         layer.scale = value
         @canvas.refresh("Background scale #{value.round(2)}x")
+      end
+
+      @terrain_color_button.on_clicked do
+        next if @updating_panel
+        next unless layer = @state.terrain_layer
+
+        color = Qt6::ColorDialog.get_color(@widget, layer.accent, title: "Select Fill Color")
+        next unless color
+
+        layer.accent = color
+        refresh_layer_model
+        @terrain_color_button.text = color_button_text("Fill", color)
+        @canvas.refresh("Updated fill color")
       end
 
       @path_width_spin.set_range(1.0, 12.0)
@@ -941,6 +963,12 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Scale")
         column << @background_scale_spin
       end
+      terrain_controls = Qt6::Widget.new
+      terrain_controls.vbox do |column|
+        column << Qt6::Label.new("Fill Tool")
+        column << @terrain_fill_label
+        column << @terrain_color_button
+      end
       path_controls = Qt6::Widget.new
       path_controls.vbox do |column|
         column << Qt6::Label.new("Selected Path")
@@ -993,6 +1021,7 @@ module WargameMapToolCrystal
         column << @source_label
         column << @background_label
         column << background_controls
+        column << terrain_controls
         column << path_controls
         column << asset_controls
         column << text_controls
@@ -1051,6 +1080,15 @@ module WargameMapToolCrystal
                                else
                                  "Background: unavailable"
                                end
+      if layer = @state.terrain_layer
+        @terrain_fill_label.text = "Painted hexes: #{layer.fill_count}"
+        @terrain_color_button.text = color_button_text("Fill", layer.accent)
+        @terrain_color_button.enabled = true
+      else
+        @terrain_fill_label.text = "Painted hexes: unavailable"
+        @terrain_color_button.text = "Fill Color"
+        @terrain_color_button.enabled = false
+      end
       if layer = @state.background_layer
         @background_offset_x_spin.value = layer.offset_x
         @background_offset_y_spin.value = layer.offset_y
@@ -1189,6 +1227,8 @@ module WargameMapToolCrystal
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
+                             elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
+                               "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints hovered hexes with #{terrain_layer.fill_count} painted so far; right-drag clears fills. The inspector button changes the current fill color."
                              else
                                "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
                              end

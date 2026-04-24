@@ -112,6 +112,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def terrain_layer : TerrainLayer?
+      @layers.each do |layer|
+        return layer.as(TerrainLayer) if layer.is_a?(TerrainLayer)
+      end
+
+      nil
+    end
+
     def text_layer : TextLayer?
       @layers.each do |layer|
         return layer.as(TextLayer) if layer.is_a?(TextLayer)
@@ -139,6 +147,14 @@ module WargameMapToolCrystal
     def text_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(TextLayer)
+      end
+
+      nil
+    end
+
+    def terrain_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(TerrainLayer)
       end
 
       nil
@@ -437,6 +453,41 @@ module WargameMapToolCrystal
             end
           end
 
+          json.field "terrain" do
+            if terrain = terrain_layer
+              json.object do
+                json.field "accent" do
+                  json.object do
+                    json.field "red", terrain.accent.red
+                    json.field "green", terrain.accent.green
+                    json.field "blue", terrain.accent.blue
+                    json.field "alpha", terrain.accent.alpha
+                  end
+                end
+                json.field "fills" do
+                  json.array do
+                    terrain.fills.each do |coords, color|
+                      json.object do
+                        json.field "col", coords[0]
+                        json.field "row", coords[1]
+                        json.field "color" do
+                          json.object do
+                            json.field "red", color.red
+                            json.field "green", color.green
+                            json.field "blue", color.blue
+                            json.field "alpha", color.alpha
+                          end
+                        end
+                      end
+                    end
+                  end
+                end
+              end
+            else
+              json.null
+            end
+          end
+
           json.field "text_objects" do
             if layer = text_layer
               json.array do
@@ -502,6 +553,37 @@ module WargameMapToolCrystal
         layer.scale = background_data["scale"]?.try(&.as_f?) || 1.0
         layer.visible = background_data["visible"]?.try(&.as_bool?) || true
         layer.opacity = background_data["opacity"]?.try(&.as_i?) || 100
+      end
+
+      terrain_data = data["terrain"]?
+      if terrain_data && (terrain = terrain_layer)
+        terrain.clear_fills
+
+        if accent_data = terrain_data["accent"]?
+          terrain.accent = Qt6::Color.new(
+            (accent_data["red"]?.try(&.as_i?) || terrain.accent.red).to_i32,
+            (accent_data["green"]?.try(&.as_i?) || terrain.accent.green).to_i32,
+            (accent_data["blue"]?.try(&.as_i?) || terrain.accent.blue).to_i32,
+            (accent_data["alpha"]?.try(&.as_i?) || terrain.accent.alpha).to_i32,
+          )
+        end
+
+        terrain_data["fills"]?.try(&.as_a?).try do |fills|
+          fills.each do |fill_data|
+            color_data = fill_data["color"]?
+            color = Qt6::Color.new(
+              (color_data.try { |value| value["red"]?.try(&.as_i?) } || terrain.accent.red).to_i32,
+              (color_data.try { |value| value["green"]?.try(&.as_i?) } || terrain.accent.green).to_i32,
+              (color_data.try { |value| value["blue"]?.try(&.as_i?) } || terrain.accent.blue).to_i32,
+              (color_data.try { |value| value["alpha"]?.try(&.as_i?) } || 255).to_i32,
+            )
+            terrain.set_fill(
+              (fill_data["col"]?.try(&.as_i?) || 0).to_i32,
+              (fill_data["row"]?.try(&.as_i?) || 0).to_i32,
+              color,
+            )
+          end
+        end
       end
 
       text_layer.try(&.clear_texts)
