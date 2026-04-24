@@ -6,7 +6,7 @@ module WargameMapToolCrystal
   VERSION = "0.1.0"
 
   class MapState
-    TOOL_NAMES = ["Background", "Fill", "Border", "Hexside", "Path", "Text", "Asset"] of String
+    TOOL_NAMES = ["Background", "Fill", "Border", "Hexside", "Path", "Freeform", "Text", "Asset"] of String
 
     property zoom : Float64
     property pan_x : Float64
@@ -27,6 +27,7 @@ module WargameMapToolCrystal
     property selected_border_object : BorderObject?
     property selected_hexside_object : HexsideObject?
     property selected_path_object : PathObject?
+    property selected_freeform_path_object : FreeformPathObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
     getter layers : Array(MapLayer)
@@ -54,6 +55,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -82,6 +84,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -153,6 +156,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def freeform_path_layer : FreeformPathLayer?
+      @layers.each do |layer|
+        return layer.as(FreeformPathLayer) if layer.is_a?(FreeformPathLayer)
+      end
+
+      nil
+    end
+
     def hexside_layer : HexsideLayer?
       @layers.each do |layer|
         return layer.as(HexsideLayer) if layer.is_a?(HexsideLayer)
@@ -209,6 +220,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def freeform_path_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(FreeformPathLayer)
+      end
+
+      nil
+    end
+
     def hexside_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(HexsideLayer)
@@ -235,6 +254,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
       true
@@ -262,6 +282,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       true
@@ -287,6 +308,7 @@ module WargameMapToolCrystal
       activate_path_layer
       @selected_border_object = nil
       @selected_hexside_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = anchor
@@ -316,6 +338,7 @@ module WargameMapToolCrystal
       layer.add_path(object)
       @selected_border_object = nil
       @selected_hexside_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
@@ -357,9 +380,47 @@ module WargameMapToolCrystal
 
       @selected_border_object = nil
       @selected_hexside_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = object
+      layer.add_path(object)
+      object
+    end
+
+    def selected_freeform_path_present? : Bool
+      object = @selected_freeform_path_object
+      layer = freeform_path_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_freeform_path_selection : Nil
+      @selected_freeform_path_object = nil
+    end
+
+    def create_freeform_path(points : Array(Tuple(Float64, Float64))) : FreeformPathObject?
+      layer = freeform_path_layer
+      return nil unless layer
+      return nil unless points.size >= 2
+
+      activate_freeform_path_layer
+      style_source = selected_freeform_path_present? ? @selected_freeform_path_object : nil
+      object = FreeformPathObject.new(
+        points,
+        style_source ? style_source.color : layer.accent,
+        style_source ? style_source.width : 3.0,
+        style_source ? style_source.opacity : 1.0,
+      )
+
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @selected_freeform_path_object = object
       layer.add_path(object)
       object
     end
@@ -398,6 +459,7 @@ module WargameMapToolCrystal
       layer.add_asset(object)
       @selected_border_object = nil
       @selected_hexside_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
@@ -432,6 +494,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
       object
@@ -450,6 +513,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
@@ -459,11 +523,32 @@ module WargameMapToolCrystal
       object = hovered_path_object
       @selected_border_object = nil
       @selected_hexside_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
       @selected_path_object = object
       object
+    end
+
+    def select_hovered_freeform_path : FreeformPathObject?
+      object = hovered_freeform_path_object
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @selected_freeform_path_object = object
+      object
+    end
+
+    def hovered_freeform_path_object : FreeformPathObject?
+      screen = @hover_screen
+      layer = freeform_path_layer
+      return nil unless screen && layer
+
+      layer.nearest_path(self, screen)
     end
 
     def hovered_path_object : PathObject?
@@ -600,6 +685,19 @@ module WargameMapToolCrystal
             end
           end
 
+          json.field "freeform_path_objects" do
+            if layer = freeform_path_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
+
           json.field "asset_objects" do
             if layer = asset_layer
               json.array do
@@ -696,6 +794,7 @@ module WargameMapToolCrystal
       text_layer.try(&.clear_texts)
       @pending_path_anchor = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       data["text_objects"]?.try(&.as_a?).try do |objects|
@@ -711,6 +810,15 @@ module WargameMapToolCrystal
           layer.clear_paths
           objects.each do |object_data|
             layer.add_path(PathObject.from_json(object_data))
+          end
+        end
+      end
+
+      data["freeform_path_objects"]?.try(&.as_a?).try do |objects|
+        if layer = freeform_path_layer
+          layer.clear_paths
+          objects.each do |object_data|
+            layer.add_path(FreeformPathObject.from_json(object_data))
           end
         end
       end
@@ -737,6 +845,8 @@ module WargameMapToolCrystal
     private def build_default_layers : Array(MapLayer)
       path_layer = PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54))
       seed_default_path_objects(path_layer)
+      freeform_path_layer = FreeformPathLayer.new("Freeform Paths", "Freeform Paths", true, Qt6::Color.new(82, 122, 164))
+      seed_default_freeform_path_objects(freeform_path_layer)
 
       border_layer = BorderLayer.new("Borders", "Borders", true, Qt6::Color.new(58, 54, 48))
       hexside_layer = HexsideLayer.new("Hexsides", "Hexsides", true, Qt6::Color.new(70, 108, 154))
@@ -753,6 +863,7 @@ module WargameMapToolCrystal
         border_layer,
         hexside_layer,
         path_layer,
+        freeform_path_layer,
         text_layer,
         asset_layer,
       ] of MapLayer
@@ -760,6 +871,12 @@ module WargameMapToolCrystal
 
     private def activate_path_layer : Nil
       if index = path_layer_index
+        set_active_layer(index)
+      end
+    end
+
+    private def activate_freeform_path_layer : Nil
+      if index = freeform_path_layer_index
         set_active_layer(index)
       end
     end
@@ -812,6 +929,7 @@ module WargameMapToolCrystal
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_hexside_object = nil
       @selected_border_object = object
       layer.add_border(object)
@@ -843,6 +961,7 @@ module WargameMapToolCrystal
       @selected_text_object = nil
       @selected_asset_object = nil
       @selected_path_object = nil
+      @selected_freeform_path_object = nil
       @selected_hexside_object = object
       layer.add_hexside(object)
       object
@@ -892,6 +1011,16 @@ module WargameMapToolCrystal
       layer.add_path(PathObject.new(7, 5, 10, 7, color: layer.accent, width: 3.0, line_type: "dashed"))
       layer.add_path(PathObject.new(10, 7, 13, 8, color: layer.accent, width: 3.0))
       layer.add_path(PathObject.new(13, 8, 16, 10, color: layer.accent, width: 3.0, line_type: "dotted", opacity: 0.9))
+    end
+
+    private def seed_default_freeform_path_objects(layer : FreeformPathLayer) : Nil
+      layer.add_path(FreeformPathObject.new([
+        {hex_center(2, 9).x - 18.0, hex_center(2, 9).y - 12.0},
+        {hex_center(3, 8).x - 4.0, hex_center(3, 8).y + 8.0},
+        {hex_center(4, 8).x + 16.0, hex_center(4, 8).y - 10.0},
+        {hex_center(6, 7).x + 4.0, hex_center(6, 7).y + 12.0},
+        {hex_center(7, 6).x + 18.0, hex_center(7, 6).y - 6.0},
+      ] of Tuple(Float64, Float64), color: layer.accent, width: 3.5, opacity: 0.92))
     end
 
     private def seed_default_text_objects(layer : TextLayer) : Nil

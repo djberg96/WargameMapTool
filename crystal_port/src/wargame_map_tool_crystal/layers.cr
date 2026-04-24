@@ -723,6 +723,217 @@ module WargameMapToolCrystal
     end
   end
 
+  class FreeformPathObject
+    property points : Array(Tuple(Float64, Float64))
+    property color : Qt6::Color
+    property width : Float64
+    property opacity : Float64
+
+    def initialize(
+      points : Array(Tuple(Float64, Float64)),
+      @color : Qt6::Color = Qt6::Color.new(82, 122, 164),
+      @width : Float64 = 3.0,
+      @opacity : Float64 = 1.0,
+    )
+      @points = points.map { |point| {point[0].to_f64, point[1].to_f64} }
+    end
+
+    def point_count : Int32
+      @points.size.to_i32
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "width", @width
+        json.field "opacity", @opacity
+        json.field "points" do
+          json.array do
+            @points.each do |point|
+              json.object do
+                json.field "x", point[0]
+                json.field "y", point[1]
+              end
+            end
+          end
+        end
+        json.field "color" do
+          json.object do
+            json.field "red", @color.red
+            json.field "green", @color.green
+            json.field "blue", @color.blue
+            json.field "alpha", @color.alpha
+          end
+        end
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      color_data = data["color"]?
+      color = Qt6::Color.new(
+        (color_data.try { |value| value["red"]?.try(&.as_i?) } || 82).to_i32,
+        (color_data.try { |value| value["green"]?.try(&.as_i?) } || 122).to_i32,
+        (color_data.try { |value| value["blue"]?.try(&.as_i?) } || 164).to_i32,
+        (color_data.try { |value| value["alpha"]?.try(&.as_i?) } || 255).to_i32,
+      )
+
+      points = [] of Tuple(Float64, Float64)
+      data["points"]?.try(&.as_a?).try do |items|
+        items.each do |item|
+          x = if value = item["x"]?
+                value.as_f? || (value.as_i? || 0).to_f64
+              else
+                0.0
+              end
+          y = if value = item["y"]?
+                value.as_f? || (value.as_i? || 0).to_f64
+              else
+                0.0
+              end
+          points << {x.to_f64, y.to_f64}
+        end
+      end
+
+      new(
+        points,
+        color,
+        data["width"]?.try(&.as_f?) || 3.0,
+        data["opacity"]?.try(&.as_f?) || 1.0,
+      )
+    end
+
+    def screen_distance_to(state : MapState, point : Qt6::PointF) : Float64
+      return Float64::INFINITY if @points.size < 2
+
+      best_distance = Float64::INFINITY
+      (@points.size - 1).times do |index|
+        start_point = state.screen_point(Qt6::PointF.new(@points[index][0], @points[index][1]))
+        end_point = state.screen_point(Qt6::PointF.new(@points[index + 1][0], @points[index + 1][1]))
+        distance = distance_to_segment(point, start_point, end_point)
+        best_distance = distance if distance < best_distance
+      end
+
+      best_distance
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      screen_points = build_screen_points(state)
+      return if screen_points.size < 2
+
+      selection_pen = Qt6::QPen.new(accent, @width + 4.0)
+      selection_pen.style = Qt6::PenStyle::DashLine
+      selection_pen.cap_style = Qt6::PenCapStyle::RoundCap
+
+      painter.save
+      painter.pen = selection_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = 0.9
+      draw_screen_segments(painter, screen_points)
+      painter.pen = Qt6::QPen.new(accent, 2.0)
+      painter.brush = Qt6::Color.new(250, 248, 242)
+      painter.draw_ellipse(Qt6::RectF.new(screen_points.first.x - 5.0, screen_points.first.y - 5.0, 10.0, 10.0))
+      painter.draw_ellipse(Qt6::RectF.new(screen_points.last.x - 5.0, screen_points.last.y - 5.0, 10.0, 10.0))
+      painter.restore
+    end
+
+    private def build_screen_points(state : MapState) : Array(Qt6::PointF)
+      @points.map { |point| state.screen_point(Qt6::PointF.new(point[0], point[1])) }
+    end
+
+    private def draw_screen_segments(painter : Qt6::QPainter, screen_points : Array(Qt6::PointF)) : Nil
+      (screen_points.size - 1).times do |index|
+        painter.draw_line(screen_points[index], screen_points[index + 1])
+      end
+    end
+
+    private def distance_to_segment(point : Qt6::PointF, start_point : Qt6::PointF, end_point : Qt6::PointF) : Float64
+      dx = end_point.x - start_point.x
+      dy = end_point.y - start_point.y
+      length_squared = dx * dx + dy * dy
+      return Float64::INFINITY if length_squared <= 0.001
+
+      t = (((point.x - start_point.x) * dx) + ((point.y - start_point.y) * dy)) / length_squared
+      t = t.clamp(0.0, 1.0)
+      projection_x = start_point.x + dx * t
+      projection_y = start_point.y + dy * t
+      delta_x = point.x - projection_x
+      delta_y = point.y - projection_y
+      Math.sqrt(delta_x * delta_x + delta_y * delta_y)
+    end
+  end
+
+  class FreeformPathLayer < MapLayer
+    getter objects : Array(FreeformPathObject)
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of FreeformPathObject
+    end
+
+    def add_path(object : FreeformPathObject) : Nil
+      @objects << object
+    end
+
+    def clear_paths : Nil
+      @objects.clear
+    end
+
+    def path_count : Int32
+      @objects.size.to_i32
+    end
+
+    def remove_path(object : FreeformPathObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
+    def nearest_path(state : MapState, screen_point : Qt6::PointF, max_distance : Float64 = 10.0) : FreeformPathObject?
+      best = nil
+      best_distance = max_distance
+
+      @objects.each do |object|
+        distance = object.screen_distance_to(state, screen_point)
+        next unless distance <= best_distance
+
+        best_distance = distance
+        best = object
+      end
+
+      best
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      layer_opacity = opacity / 100.0
+
+      @objects.each do |object|
+        next if object.points.size < 2
+
+        pen = Qt6::QPen.new(object.color, object.width)
+        pen.cap_style = Qt6::PenCapStyle::RoundCap
+        pen.join_style = Qt6::PenJoinStyle::RoundJoin
+
+        painter.save
+        painter.pen = pen
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.opacity = (layer_opacity * object.opacity).clamp(0.0, 1.0)
+        (object.points.size - 1).times do |index|
+          start_point = state.screen_point(Qt6::PointF.new(object.points[index][0], object.points[index][1]))
+          end_point = state.screen_point(Qt6::PointF.new(object.points[index + 1][0], object.points[index + 1][1]))
+          painter.draw_line(start_point, end_point)
+        end
+        painter.restore
+      end
+
+      if selected = state.selected_freeform_path_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
+      end
+    end
+  end
+
   class TextObject
     property text : String
     property x : Float64

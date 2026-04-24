@@ -89,6 +89,7 @@ module WargameMapToolCrystal
     @border_label : Qt6::Label
     @hexside_label : Qt6::Label
     @path_label : Qt6::Label
+    @freeform_path_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
     @hover_label : Qt6::Label
@@ -104,6 +105,9 @@ module WargameMapToolCrystal
     @path_line_type_combo : Qt6::ComboBox
     @path_color_button : Qt6::PushButton
     @path_opacity_spin : Qt6::DoubleSpinBox
+    @freeform_path_width_spin : Qt6::DoubleSpinBox
+    @freeform_path_color_button : Qt6::PushButton
+    @freeform_path_opacity_spin : Qt6::DoubleSpinBox
     @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
     @asset_rotation_spin : Qt6::DoubleSpinBox
@@ -148,6 +152,7 @@ module WargameMapToolCrystal
       @border_label = Qt6::Label.new
       @hexside_label = Qt6::Label.new
       @path_label = Qt6::Label.new
+      @freeform_path_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
@@ -163,6 +168,9 @@ module WargameMapToolCrystal
       @path_line_type_combo = Qt6::ComboBox.new
       @path_color_button = Qt6::PushButton.new("Path Color")
       @path_opacity_spin = Qt6::DoubleSpinBox.new
+      @freeform_path_width_spin = Qt6::DoubleSpinBox.new
+      @freeform_path_color_button = Qt6::PushButton.new("Freeform Color")
+      @freeform_path_opacity_spin = Qt6::DoubleSpinBox.new
       @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
       @asset_rotation_spin = Qt6::DoubleSpinBox.new
@@ -542,6 +550,32 @@ module WargameMapToolCrystal
         end
       end
 
+      delete_freeform_path_action = Qt6::Action.new("Delete Selected Freeform Path…", @widget)
+      delete_freeform_path_action.on_triggered do
+        object = @state.selected_freeform_path_object if @state.selected_freeform_path_present?
+        unless object
+          handle_status("Select a freeform path to delete it")
+          next
+        end
+
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Freeform Path",
+          text: "Delete the selected freeform path?",
+          informative_text: "This removes the selected freeform path with #{object.point_count} points from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.freeform_path_layer) && layer.remove_path(object)
+          @state.clear_freeform_path_selection
+          refresh_all("Deleted freeform path")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Freeform path delete failed")
+        end
+      end
+
       clear_fills_action = Qt6::Action.new("Clear All Fills…", @widget)
       clear_fills_action.on_triggered do
         layer = @state.terrain_layer
@@ -722,6 +756,7 @@ module WargameMapToolCrystal
       edit_menu << delete_text_action
       edit_menu << duplicate_path_action
       edit_menu << delete_path_action
+      edit_menu << delete_freeform_path_action
       edit_menu << delete_border_action
       edit_menu << delete_hexside_action
       edit_menu << clear_fills_action
@@ -776,6 +811,10 @@ module WargameMapToolCrystal
             end
           elsif tool_name == "Hexside"
             if index = @state.hexside_layer_index
+              @state.set_active_layer(index)
+            end
+          elsif tool_name == "Freeform"
+            if index = @state.freeform_path_layer_index
               @state.set_active_layer(index)
             end
           end
@@ -1031,6 +1070,41 @@ module WargameMapToolCrystal
         @canvas.refresh("Updated path opacity")
       end
 
+      @freeform_path_width_spin.set_range(1.0, 12.0)
+      @freeform_path_width_spin.decimals = 1
+      @freeform_path_width_spin.single_step = 0.5
+      @freeform_path_width_spin.suffix = " px"
+      @freeform_path_width_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+
+        object.width = value
+        @canvas.refresh("Updated freeform path width")
+      end
+
+      @freeform_path_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.color, title: "Select Freeform Path Color")
+        next unless color
+
+        object.color = color
+        @freeform_path_color_button.text = color_button_text("Freeform", color)
+        @canvas.refresh("Updated freeform path color")
+      end
+
+      @freeform_path_opacity_spin.set_range(0.0, 1.0)
+      @freeform_path_opacity_spin.decimals = 2
+      @freeform_path_opacity_spin.single_step = 0.05
+      @freeform_path_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+
+        object.opacity = value
+        @canvas.refresh("Updated freeform path opacity")
+      end
+
       @asset_scale_spin.set_range(0.1, 4.0)
       @asset_scale_spin.decimals = 2
       @asset_scale_spin.single_step = 0.05
@@ -1216,6 +1290,16 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Opacity")
         column << @path_opacity_spin
       end
+      freeform_path_controls = Qt6::Widget.new
+      freeform_path_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Freeform Path")
+        column << @freeform_path_label
+        column << Qt6::Label.new("Width")
+        column << @freeform_path_width_spin
+        column << @freeform_path_color_button
+        column << Qt6::Label.new("Opacity")
+        column << @freeform_path_opacity_spin
+      end
       asset_controls = Qt6::Widget.new
       asset_controls.vbox do |column|
         column << Qt6::Label.new("Selected Asset")
@@ -1260,6 +1344,7 @@ module WargameMapToolCrystal
         column << border_controls
         column << hexside_controls
         column << path_controls
+        column << freeform_path_controls
         column << asset_controls
         column << text_controls
         column << @active_tool_label
@@ -1406,6 +1491,23 @@ module WargameMapToolCrystal
         @path_color_button.enabled = false
         @path_opacity_spin.enabled = false
       end
+      if object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+        @freeform_path_label.text = "Freeform Path: #{object.point_count} points"
+        @freeform_path_width_spin.value = object.width
+        @freeform_path_color_button.text = color_button_text("Freeform", object.color)
+        @freeform_path_opacity_spin.value = object.opacity
+        @freeform_path_width_spin.enabled = true
+        @freeform_path_color_button.enabled = true
+        @freeform_path_opacity_spin.enabled = true
+      else
+        @freeform_path_label.text = "Freeform Path: none selected"
+        @freeform_path_width_spin.value = 3.0
+        @freeform_path_color_button.text = "Freeform Color"
+        @freeform_path_opacity_spin.value = 1.0
+        @freeform_path_width_spin.enabled = false
+        @freeform_path_color_button.enabled = false
+        @freeform_path_opacity_spin.enabled = false
+      end
       if object = (@state.selected_asset_object if @state.selected_asset_present?)
         @asset_label.text = if path = object.image_path
                               "Asset: #{File.basename(path)}"
@@ -1507,6 +1609,8 @@ module WargameMapToolCrystal
                                end
                              elsif object = (@state.selected_path_object if @state.selected_path_present?)
                                "Selected path: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click with the Path tool to change selection, drag an endpoint handle onto a neighboring hex to reshape it, press Delete to remove it, or edit it in the inspector."
+                             elsif object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+                               "Selected freeform path with #{object.point_count} points at #{@state.zoom.round(2)}x. Click with the Freeform tool to change selection, drag to draw a new path, press Delete to remove it, or edit width, color, and opacity in the inspector."
                              elsif object = (@state.selected_border_object if @state.selected_border_present?)
                                "Selected border: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click the same edge with the Border tool to reselect it, right-click or press Delete to remove it, or edit width, style, and color in the inspector."
                              elsif object = (@state.selected_hexside_object if @state.selected_hexside_present?)
@@ -1519,6 +1623,8 @@ module WargameMapToolCrystal
                                "Border tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a border, right-click removes the hovered border, and #{border_layer.border_count} borders are currently in the slice."
                              elsif @state.active_tool == "Hexside" && (hexside_layer = @state.hexside_layer)
                                "Hexside tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a hexside, right-click removes the hovered hexside, and #{hexside_layer.hexside_count} hexsides are currently in the slice."
+                             elsif @state.active_tool == "Freeform" && (freeform_layer = @state.freeform_path_layer)
+                               "Freeform tool active at #{@state.zoom.round(2)}x. Left-drag draws a new freeform path in world space, click an existing stroke to select it, right-click removes the hovered stroke, and #{freeform_layer.path_count} freeform paths are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else

@@ -4,6 +4,7 @@ require "./map_state"
 module WargameMapToolCrystal
   class MapCanvas
     CLICK_SELECTION_THRESHOLD = 5.0
+    MIN_FREEFORM_POINT_DISTANCE = 2.0
 
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
@@ -13,6 +14,7 @@ module WargameMapToolCrystal
     @hovered_border_edge : Tuple(Int32, Int32, Int32, Int32)?
     @hovered_hexside_edge : Tuple(Int32, Int32, Int32, Int32)?
     @last_hexside_drag_edge : Tuple(Int32, Int32, Int32, Int32)?
+    @freeform_draw_points : Array(Tuple(Float64, Float64))
     @hovered_path_endpoint : String?
     @fill_drag_count : Int32
     @hexside_drag_count : Int32
@@ -33,6 +35,7 @@ module WargameMapToolCrystal
       @hovered_border_edge = nil
       @hovered_hexside_edge = nil
       @last_hexside_drag_edge = nil
+      @freeform_draw_points = [] of Tuple(Float64, Float64)
       @hovered_path_endpoint = nil
       @fill_drag_count = 0
       @hexside_drag_count = 0
@@ -60,6 +63,7 @@ module WargameMapToolCrystal
         @hovered_border_edge = nil
         @hovered_hexside_edge = nil
         @last_hexside_drag_edge = nil
+        @freeform_draw_points.clear
         @fill_drag_count = 0
         @hexside_drag_count = 0
         @drag_mode = "pan"
@@ -103,6 +107,26 @@ module WargameMapToolCrystal
               @hexside_drag_count = clear_hexside(edge)
               @drag_mode = "hexside_erase"
               handled_press = @hexside_drag_count > 0
+            end
+          end
+        elsif @state.active_tool == "Freeform"
+          @state.hover_screen = event.position
+          @state.hover_hex = @state.pick_hex(event.position)
+
+          if event.button == 1
+            world = @state.screen_to_world(event.position)
+            @freeform_draw_points = [{world.x.to_f64, world.y.to_f64}] of Tuple(Float64, Float64)
+            @drag_mode = "freeform_pending"
+          elsif event.button == 2
+            if object = @state.hovered_freeform_path_object
+              if (layer = @state.freeform_path_layer) && layer.remove_path(object)
+                @state.clear_freeform_path_selection if @state.selected_freeform_path_object == object
+                refresh("Removed freeform path")
+                @state.dragging = false
+                @press_pointer = nil
+                @drag_mode = "freeform_remove"
+                handled_press = true
+              end
             end
           end
         end
@@ -185,6 +209,11 @@ module WargameMapToolCrystal
               if edge = @hovered_hexside_edge
                 @hexside_drag_count += clear_hexside(edge)
               end
+            elsif @drag_mode == "freeform_pending" || @drag_mode == "freeform_draw"
+              @drag_mode = "freeform_draw"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              append_freeform_draw_point(@state.screen_to_world(event.position))
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
@@ -252,6 +281,13 @@ module WargameMapToolCrystal
                       "hexside"
                     end
             refresh(count <= 1 ? "Removed hexside #{label}" : "Removed #{count} hexsides")
+          elsif @drag_mode == "freeform_draw"
+            append_freeform_draw_point(@state.screen_to_world(event.position), true)
+            if object = @state.create_freeform_path(@freeform_draw_points)
+              refresh("Created freeform path with #{object.point_count} points")
+            else
+              refresh("Freeform path creation failed")
+            end
           elsif !@drag_moved && @state.active_tool == "Text"
             if object = @state.select_hovered_text
               refresh("Selected text '#{object.text}'")
@@ -308,6 +344,7 @@ module WargameMapToolCrystal
                 @state.selected_text_object = nil
                 @state.selected_asset_object = nil
                 @state.selected_path_object = nil
+                @state.selected_freeform_path_object = nil
                 @state.clear_pending_path_anchor
                 @state.selected_hexside_object = object
                 refresh("Selected hexside #{edge_label(edge)}")
@@ -319,6 +356,13 @@ module WargameMapToolCrystal
             else
               @state.clear_hexside_selection
               refresh("Cleared hexside selection")
+            end
+          elsif !@drag_moved && @state.active_tool == "Freeform"
+            if object = @state.select_hovered_freeform_path
+              refresh("Selected freeform path (#{object.point_count} points)")
+            else
+              @state.clear_freeform_path_selection
+              refresh("Cleared freeform path selection")
             end
           elsif !@drag_moved && @state.active_tool == "Asset"
             if object = @state.select_hovered_asset
@@ -350,6 +394,7 @@ module WargameMapToolCrystal
           @drag_asset_object = nil
           @drag_path_object = nil
           @drag_path_endpoint = nil
+          @freeform_draw_points.clear
           @fill_drag_count = 0
           @hexside_drag_count = 0
           @last_hexside_drag_edge = nil
@@ -426,6 +471,15 @@ module WargameMapToolCrystal
                 refresh("Hexside delete failed")
               end
             end
+          elsif @state.active_tool == "Freeform"
+            if object = (@state.selected_freeform_path_object if @state.selected_freeform_path_present?)
+              if (layer = @state.freeform_path_layer) && layer.remove_path(object)
+                @state.clear_freeform_path_selection
+                refresh("Deleted freeform path")
+              else
+                refresh("Freeform path delete failed")
+              end
+            end
           end
         end
       end
@@ -440,6 +494,7 @@ module WargameMapToolCrystal
         draw_hovered_border_edge(painter)
         draw_hovered_hexside_edge(painter)
         draw_pending_path_preview(painter)
+        draw_pending_freeform_preview(painter)
         draw_hovered_path_endpoint(painter)
         draw_hud(painter)
       end
@@ -464,6 +519,10 @@ module WargameMapToolCrystal
 
       if object = @state.hovered_text_object
         base_message = "#{base_message} | Text: #{object.text}"
+      end
+
+      if object = @state.hovered_freeform_path_object
+        base_message = "#{base_message} | Freeform: #{object.point_count} points"
       end
 
       if object = @state.hovered_path_object
@@ -631,6 +690,18 @@ module WargameMapToolCrystal
       1
     end
 
+    private def append_freeform_draw_point(world : Qt6::PointF, force : Bool = false) : Nil
+      point = {world.x.to_f64, world.y.to_f64}
+
+      if last = @freeform_draw_points.last?
+        dx = point[0] - last[0]
+        dy = point[1] - last[1]
+        return if !force && Math.sqrt(dx * dx + dy * dy) < MIN_FREEFORM_POINT_DISTANCE
+      end
+
+      @freeform_draw_points << point
+    end
+
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil
       return unless @state.active_tool == "Path"
       return unless endpoint = @hovered_path_endpoint
@@ -739,6 +810,27 @@ module WargameMapToolCrystal
         end
       end
 
+      painter.restore
+    end
+
+    private def draw_pending_freeform_preview(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Freeform"
+      return if @freeform_draw_points.size < 2
+
+      style_source = @state.selected_freeform_path_object if @state.selected_freeform_path_present?
+      pen = Qt6::QPen.new(style_source ? style_source.color : @state.active_layer.accent, style_source ? style_source.width : 3.0)
+      pen.cap_style = Qt6::PenCapStyle::RoundCap
+      pen.join_style = Qt6::PenJoinStyle::RoundJoin
+
+      painter.save
+      painter.pen = pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = style_source ? style_source.opacity.clamp(0.0, 1.0) : 0.78
+      (@freeform_draw_points.size - 1).times do |index|
+        start_point = @state.screen_point(Qt6::PointF.new(@freeform_draw_points[index][0], @freeform_draw_points[index][1]))
+        end_point = @state.screen_point(Qt6::PointF.new(@freeform_draw_points[index + 1][0], @freeform_draw_points[index + 1][1]))
+        painter.draw_line(start_point, end_point)
+      end
       painter.restore
     end
 
