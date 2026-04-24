@@ -22,6 +22,7 @@ module WargameMapToolCrystal
     property source_path : String?
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
+    property selected_text_object : TextObject?
     getter layers : Array(MapLayer)
     getter cols : Int32
     getter rows : Int32
@@ -42,6 +43,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @selected_text_object = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -63,6 +65,7 @@ module WargameMapToolCrystal
       @source_path = nil
       @hover_hex = nil
       @hover_screen = nil
+      @selected_text_object = nil
       @cols = 18
       @rows = 14
       @hex_radius = 28.0
@@ -129,8 +132,28 @@ module WargameMapToolCrystal
                  Qt6::PointF.new(world_bounds.x + world_bounds.width / 2.0, world_bounds.y + world_bounds.height / 2.0)
                end
 
-      layer.add_text(TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true))
+      object = TextObject.new(clean_text, anchor.x + 10.0, anchor.y - 10.0, color: layer.accent, bold: true)
+      layer.add_text(object)
+      @selected_text_object = object
       true
+    end
+
+    def selected_text_present? : Bool
+      object = @selected_text_object
+      layer = text_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_text_selection : Nil
+      @selected_text_object = nil
+    end
+
+    def select_hovered_text : TextObject?
+      object = hovered_text_object
+      @selected_text_object = object
+      object
     end
 
     def hovered_text_object : TextObject?
@@ -204,6 +227,7 @@ module WargameMapToolCrystal
       end
 
       text_layer.try(&.clear_texts)
+      @selected_text_object = nil
       data["text_objects"]?.try(&.as_a?).try do |objects|
         if layer = text_layer
           objects.each do |object_data|

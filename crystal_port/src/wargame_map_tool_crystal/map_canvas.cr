@@ -3,6 +3,10 @@ require "./map_state"
 
 module WargameMapToolCrystal
   class MapCanvas
+    CLICK_SELECTION_THRESHOLD = 5.0
+
+    @press_pointer : Qt6::PointF?
+
     getter widget : Qt6::EventWidget
 
     def initialize(@state : MapState, @status_callback : Proc(String, Nil), @hover_callback : Proc(String, Nil))
@@ -10,6 +14,8 @@ module WargameMapToolCrystal
       @widget.set_minimum_size(860, 620)
       @widget.focus_policy = Qt6::FocusPolicy::StrongFocus
       @widget.mouse_tracking = true
+      @press_pointer = nil
+      @drag_moved = false
       wire_events
     end
 
@@ -24,18 +30,27 @@ module WargameMapToolCrystal
       @widget.on_mouse_press do |event|
         @state.dragging = true
         @state.last_pointer = event.position
+        @press_pointer = event.position
+        @drag_moved = false
         @widget.set_focus
-        @status_callback.call("Panning map canvas")
       end
 
       @widget.on_mouse_move do |event|
         if @state.dragging
-          dx = event.position.x - @state.last_pointer.x
-          dy = event.position.y - @state.last_pointer.y
-          @state.pan_x += dx
-          @state.pan_y += dy
-          @state.last_pointer = event.position
-          refresh
+          if press = @press_pointer
+            total_dx = event.position.x - press.x
+            total_dy = event.position.y - press.y
+            @drag_moved ||= Math.sqrt(total_dx * total_dx + total_dy * total_dy) > CLICK_SELECTION_THRESHOLD
+          end
+
+          if @drag_moved
+            dx = event.position.x - @state.last_pointer.x
+            dy = event.position.y - @state.last_pointer.y
+            @state.pan_x += dx
+            @state.pan_y += dy
+            @state.last_pointer = event.position
+            refresh
+          end
         else
           update_hover(event.position)
         end
@@ -44,13 +59,26 @@ module WargameMapToolCrystal
       @widget.on_mouse_release do |event|
         update_hover(event.position)
         if @state.dragging
+          if !@drag_moved && @state.active_tool == "Text"
+            if object = @state.select_hovered_text
+              refresh("Selected text '#{object.text}'")
+            else
+              @state.clear_text_selection
+              refresh("Cleared text selection")
+            end
+          elsif @drag_moved
+            @status_callback.call("View settled at #{@state.zoom.round(2)}x")
+          end
+
           @state.dragging = false
-          @status_callback.call("View settled at #{@state.zoom.round(2)}x")
+          @press_pointer = nil
+          @drag_moved = false
         end
       end
 
       @widget.on_leave do |_event|
         @state.hover_hex = nil
+        @state.hover_screen = nil
         @hover_callback.call("Hover: outside map")
         refresh
       end

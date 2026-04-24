@@ -295,11 +295,11 @@ module WargameMapToolCrystal
         end
       end
 
-      edit_text_action = Qt6::Action.new("Edit Hovered Text…", @widget)
+      edit_text_action = Qt6::Action.new("Edit Selected Text…", @widget)
       edit_text_action.on_triggered do
-        object = @state.hovered_text_object
+        object = @state.selected_text_object if @state.selected_text_present?
         unless object
-          handle_status("Hover a text label to edit it")
+          handle_status("Select a text label to edit it")
           next
         end
 
@@ -317,11 +317,11 @@ module WargameMapToolCrystal
         end
       end
 
-      delete_text_action = Qt6::Action.new("Delete Hovered Text…", @widget)
+      delete_text_action = Qt6::Action.new("Delete Selected Text…", @widget)
       delete_text_action.on_triggered do
-        object = @state.hovered_text_object
+        object = @state.selected_text_object if @state.selected_text_present?
         unless object
-          handle_status("Hover a text label to delete it")
+          handle_status("Select a text label to delete it")
           next
         end
 
@@ -329,11 +329,12 @@ module WargameMapToolCrystal
           @widget,
           title: "Delete Text Label",
           text: "Delete '#{object.text}'?",
-          informative_text: "This removes the hovered text label from the Crystal slice.",
+          informative_text: "This removes the selected text label from the Crystal slice.",
           buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
         )
 
         if result == Qt6::MessageBoxButton::Yes && (layer = @state.text_layer) && layer.remove_text(object)
+          @state.clear_text_selection
           refresh_all("Deleted text label")
         elsif result == Qt6::MessageBoxButton::No
           handle_status("Delete canceled")
@@ -595,7 +596,11 @@ module WargameMapToolCrystal
                             "Hover: outside map"
                           end
       @layer_visible_check.checked = @state.active_layer.visible
-      @selection_note.text = "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
+      @selection_note.text = if object = (@state.selected_text_object if @state.selected_text_present?)
+                               "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection."
+                             else
+                               "Selected #{@state.active_layer.kind.downcase} layer at #{@state.zoom.round(2)}x. The current slice proves the shell and canvas workflow before porting project I/O and tool-specific commands."
+                             end
       @updating_panel = false
     end
 
