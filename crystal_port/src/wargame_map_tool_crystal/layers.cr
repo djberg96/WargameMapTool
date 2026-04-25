@@ -1333,6 +1333,128 @@ module WargameMapToolCrystal
       end
     end
 
+    def selection_corners : Array(Tuple(Float64, Float64))
+      path = build_path
+      rect = path.bounding_rect
+      center_x, center_y = center
+      return [{center_x, center_y}] * 4 if rect.width <= 0.0 || rect.height <= 0.0
+
+      margin = @stroke_width / 2.0
+      corners = [
+        {rect.x - margin, rect.y - margin},
+        {rect.x + rect.width + margin, rect.y - margin},
+        {rect.x + rect.width + margin, rect.y + rect.height + margin},
+        {rect.x - margin, rect.y + rect.height + margin},
+      ]
+
+      return corners if @rotation == 0.0
+
+      corners.map { |point| rotate_point(point, {center_x, center_y}, @rotation) }
+    end
+
+    def rotation_handle(offset : Float64) : Tuple(Float64, Float64)
+      corners = selection_corners
+      top_mid = {
+        (corners[0][0] + corners[1][0]) / 2.0,
+        (corners[0][1] + corners[1][1]) / 2.0,
+      }
+      center_x, center_y = center
+      dx = top_mid[0] - center_x
+      dy = top_mid[1] - center_y
+      distance = Math.sqrt(dx * dx + dy * dy)
+      if distance < 1.0
+        dx = 0.0
+        dy = -1.0
+        distance = 1.0
+      end
+
+      {top_mid[0] + (dx / distance) * offset, top_mid[1] + (dy / distance) * offset}
+    end
+
+    def rotation_angle_for(point : Tuple(Float64, Float64)) : Float64
+      center_x, center_y = center
+      Math.atan2(point[0] - center_x, -(point[1] - center_y)) * 180.0 / Math::PI
+    end
+
+    def resize_from_anchor(
+      anchor : Tuple(Float64, Float64),
+      target : Tuple(Float64, Float64),
+      source_points : Array(Tuple(Float64, Float64)) = @points,
+      source_radius : Float64 = @radius,
+      source_rx : Float64 = @rx,
+      source_ry : Float64 = @ry
+    ) : Nil
+      center_x, center_y = source_geometry_center(source_points)
+      local_target = rotate_point(target, {center_x, center_y}, -@rotation)
+      local_anchor = rotate_point(anchor, {center_x, center_y}, -@rotation)
+
+      case @shape_type
+      when "line", "rect"
+        return if source_points.size < 2
+
+        x_values = source_points.map(&.[0])
+        y_values = source_points.map(&.[1])
+        old_width = x_values.max - x_values.min
+        old_height = y_values.max - y_values.min
+        old_center_x = (x_values.min + x_values.max) / 2.0
+        old_center_y = (y_values.min + y_values.max) / 2.0
+        new_center_x = (local_target[0] + local_anchor[0]) / 2.0
+        new_center_y = (local_target[1] + local_anchor[1]) / 2.0
+
+        if old_width > 0.0 && old_height > 0.0
+          scale_x = (local_target[0] - local_anchor[0]).abs / old_width
+          scale_y = (local_target[1] - local_anchor[1]).abs / old_height
+          @points = source_points.map do |point|
+            {
+              new_center_x + (point[0] - old_center_x) * scale_x,
+              new_center_y + (point[1] - old_center_y) * scale_y,
+            }
+          end
+        else
+          @points = [local_anchor, local_target]
+        end
+      when "polygon"
+        new_center_x = (local_target[0] + local_anchor[0]) / 2.0
+        new_center_y = (local_target[1] + local_anchor[1]) / 2.0
+        new_radius = Math.sqrt((local_target[0] - new_center_x) ** 2 + (local_target[1] - new_center_y) ** 2)
+        @points = [{new_center_x, new_center_y}]
+        @radius = {new_radius, 5.0}.max
+      when "ellipse"
+        new_center_x = (local_target[0] + local_anchor[0]) / 2.0
+        new_center_y = (local_target[1] + local_anchor[1]) / 2.0
+        @points = [{new_center_x, new_center_y}]
+        @rx = {(local_target[0] - local_anchor[0]).abs / 2.0, 5.0}.max
+        @ry = {(local_target[1] - local_anchor[1]).abs / 2.0, 5.0}.max
+      when "freehand"
+        return if source_points.size < 2
+
+        x_values = source_points.map(&.[0])
+        y_values = source_points.map(&.[1])
+        old_center_x = x_values.sum / source_points.size
+        old_center_y = y_values.sum / source_points.size
+        old_width = {x_values.max - x_values.min, 1.0}.max
+        old_height = {y_values.max - y_values.min, 1.0}.max
+        new_width = {(local_target[0] - local_anchor[0]).abs, 1.0}.max
+        new_height = {(local_target[1] - local_anchor[1]).abs, 1.0}.max
+        new_center_x = (local_target[0] + local_anchor[0]) / 2.0
+        new_center_y = (local_target[1] + local_anchor[1]) / 2.0
+        scale_x = new_width / old_width
+        scale_y = new_height / old_height
+
+        @points = source_points.map do |point|
+          {
+            new_center_x + (point[0] - old_center_x) * scale_x,
+            new_center_y + (point[1] - old_center_y) * scale_y,
+          }
+        end
+      else
+      end
+
+      @radius = source_radius if @shape_type != "polygon"
+      @rx = source_rx if @shape_type != "ellipse"
+      @ry = source_ry if @shape_type != "ellipse"
+    end
+
     def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0) : Nil
       path = build_screen_path(state)
       return if path.empty?
@@ -1524,6 +1646,35 @@ module WargameMapToolCrystal
 
     private def pointf(point : Tuple(Float64, Float64)) : Qt6::PointF
       Qt6::PointF.new(point[0], point[1])
+    end
+
+    private def source_geometry_center(points : Array(Tuple(Float64, Float64))) : Tuple(Float64, Float64)
+      if @shape_type == "polygon" || @shape_type == "ellipse"
+        return points.first? || {0.0, 0.0}
+      end
+      return {0.0, 0.0} if points.empty?
+
+      x_sum = 0.0
+      y_sum = 0.0
+      points.each do |point|
+        x_sum += point[0]
+        y_sum += point[1]
+      end
+      {x_sum / points.size, y_sum / points.size}
+    end
+
+    private def rotate_point(
+      point : Tuple(Float64, Float64),
+      center_point : Tuple(Float64, Float64),
+      degrees : Float64
+    ) : Tuple(Float64, Float64)
+      radians = degrees * Math::PI / 180.0
+      dx = point[0] - center_point[0]
+      dy = point[1] - center_point[1]
+      {
+        Math.cos(radians) * dx - Math.sin(radians) * dy + center_point[0],
+        Math.sin(radians) * dx + Math.cos(radians) * dy + center_point[1],
+      }
     end
 
     private def self.json_number(value : JSON::Any?) : Float64?

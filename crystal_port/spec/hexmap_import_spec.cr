@@ -236,3 +236,46 @@ describe WargameMapToolCrystal::MapState do
     state.selected_sketch_object.should eq(freehand)
   end
 end
+
+describe WargameMapToolCrystal::SketchObject do
+  it "computes selection handles in world space" do
+    object = WargameMapToolCrystal::SketchObject.new(
+      shape_type: "rect",
+      points: [{10.0, 20.0}, {30.0, 40.0}],
+      stroke_width: 2.0,
+    )
+
+    corners = object.selection_corners
+    corners.should eq([
+      {9.0, 19.0},
+      {31.0, 19.0},
+      {31.0, 41.0},
+      {9.0, 41.0},
+    ])
+
+    rotation_handle = object.rotation_handle(26.0)
+    rotation_handle[0].should be_close(20.0, 0.001)
+    rotation_handle[1].should be_close(-7.0, 0.001)
+    object.rotation_angle_for({20.0, 4.0}).should be_close(0.0, 0.001)
+  end
+
+  it "resizes freehand sketches from an anchored bounding corner" do
+    object = WargameMapToolCrystal::SketchObject.new(
+      shape_type: "freehand",
+      points: [{10.0, 10.0}, {30.0, 10.0}, {30.0, 30.0}, {10.0, 30.0}],
+      stroke_width: 2.0,
+      closed: true,
+    )
+
+    corners = object.selection_corners
+    original_points = object.points.map { |point| {point[0], point[1]} }
+    object.resize_from_anchor(corners[0], {51.0, 71.0}, original_points, object.radius, object.rx, object.ry)
+
+    x_values = object.points.map(&.[0])
+    y_values = object.points.map(&.[1])
+    (x_values.max - x_values.min).should be_close(42.0, 0.001)
+    (y_values.max - y_values.min).should be_close(62.0, 0.001)
+    object.points.size.should eq(4)
+    object.closed.should be_true
+  end
+end

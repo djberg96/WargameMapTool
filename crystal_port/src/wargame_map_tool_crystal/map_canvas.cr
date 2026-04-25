@@ -5,6 +5,9 @@ module WargameMapToolCrystal
   class MapCanvas
     CLICK_SELECTION_THRESHOLD   = 5.0
     MIN_FREEFORM_POINT_DISTANCE = 2.0
+    SKETCH_HANDLE_SIZE          = 6.0
+    SKETCH_HANDLE_HIT_RADIUS    = 10.0
+    SKETCH_ROTATE_HANDLE_OFFSET = 26.0
 
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
@@ -25,6 +28,13 @@ module WargameMapToolCrystal
     @drag_mode : String
     @sketch_preview_start : Qt6::PointF?
     @sketch_preview_end : Qt6::PointF?
+    @sketch_resize_anchor : Tuple(Float64, Float64)?
+    @sketch_resize_points : Array(Tuple(Float64, Float64))
+    @sketch_resize_radius : Float64
+    @sketch_resize_rx : Float64
+    @sketch_resize_ry : Float64
+    @sketch_rotate_initial : Float64
+    @sketch_rotate_initial_angle : Float64
 
     getter widget : Qt6::EventWidget
 
@@ -52,6 +62,13 @@ module WargameMapToolCrystal
       @drag_mode = "pan"
       @sketch_preview_start = nil
       @sketch_preview_end = nil
+      @sketch_resize_anchor = nil
+      @sketch_resize_points = [] of Tuple(Float64, Float64)
+      @sketch_resize_radius = 0.0
+      @sketch_resize_rx = 0.0
+      @sketch_resize_ry = 0.0
+      @sketch_rotate_initial = 0.0
+      @sketch_rotate_initial_angle = 0.0
       @drag_moved = false
       wire_events
     end
@@ -85,6 +102,7 @@ module WargameMapToolCrystal
         @drag_mode = "pan"
         @sketch_preview_start = nil
         @sketch_preview_end = nil
+        @sketch_resize_anchor = nil
         @drag_moved = false
 
         handled_press = false
@@ -166,10 +184,18 @@ module WargameMapToolCrystal
           if event.button == 1
             selected = @state.selected_sketch_object if @state.selected_sketch_present?
             hovered = @state.hovered_sketch_object
-            if selected && hovered == selected
+            if selected && start_sketch_handle_interaction(event.position, selected)
+              handled_press = true
+            elsif selected && hovered == selected
               @drag_sketch_object = selected
               @drag_mode = "sketch_move"
               handled_press = true
+            elsif hovered
+              @state.selected_sketch_object = hovered
+              @drag_sketch_object = hovered
+              @drag_mode = "sketch_move"
+              handled_press = true
+              refresh
             else
               world = @state.screen_to_world(event.position)
               if @state.sketch_shape_type == "freehand"
@@ -287,6 +313,23 @@ module WargameMapToolCrystal
               sketch_object.translate(
                 current_world.x.to_f64 - previous_world.x.to_f64,
                 current_world.y.to_f64 - previous_world.y.to_f64,
+              )
+            elsif @drag_mode == "sketch_resize" && (sketch_object = @drag_sketch_object)
+              if anchor = @sketch_resize_anchor
+                current_world = @state.screen_to_world(event.position)
+                sketch_object.resize_from_anchor(
+                  anchor,
+                  {current_world.x.to_f64, current_world.y.to_f64},
+                  @sketch_resize_points,
+                  @sketch_resize_radius,
+                  @sketch_resize_rx,
+                  @sketch_resize_ry,
+                )
+              end
+            elsif @drag_mode == "sketch_rotate" && (sketch_object = @drag_sketch_object)
+              current_world = @state.screen_to_world(event.position)
+              sketch_object.rotation = @sketch_rotate_initial + (
+                sketch_object.rotation_angle_for({current_world.x.to_f64, current_world.y.to_f64}) - @sketch_rotate_initial_angle
               )
             elsif @drag_mode == "path_endpoint_move" && (path_object = @drag_path_object)
               @state.hover_screen = event.position
@@ -522,6 +565,14 @@ module WargameMapToolCrystal
             if sketch_object = @drag_sketch_object
               refresh("Moved sketch #{sketch_object.shape_type}")
             end
+          elsif @drag_moved && @drag_mode == "sketch_resize"
+            if sketch_object = @drag_sketch_object
+              refresh("Resized sketch #{sketch_object.shape_type}")
+            end
+          elsif @drag_moved && @drag_mode == "sketch_rotate"
+            if sketch_object = @drag_sketch_object
+              refresh("Rotated sketch #{sketch_object.shape_type}")
+            end
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
@@ -543,6 +594,13 @@ module WargameMapToolCrystal
           @drag_mode = "pan"
           @sketch_preview_start = nil
           @sketch_preview_end = nil
+          @sketch_resize_anchor = nil
+          @sketch_resize_points.clear
+          @sketch_resize_radius = 0.0
+          @sketch_resize_rx = 0.0
+          @sketch_resize_ry = 0.0
+          @sketch_rotate_initial = 0.0
+          @sketch_rotate_initial_angle = 0.0
           @drag_moved = false
         end
       end
@@ -649,6 +707,7 @@ module WargameMapToolCrystal
         draw_pending_path_preview(painter)
         draw_pending_freeform_preview(painter)
         draw_pending_sketch_preview(painter)
+        draw_selected_sketch_handles(painter)
         draw_hovered_path_endpoint(painter)
         draw_hud(painter)
       end
@@ -872,6 +931,35 @@ module WargameMapToolCrystal
       @sketch_draw_points << point
     end
 
+    private def start_sketch_handle_interaction(position : Qt6::PointF, object : SketchObject) : Bool
+      handle = screen_point(object.rotation_handle(SKETCH_ROTATE_HANDLE_OFFSET / @state.zoom))
+      if handle_hit?(position, handle, SKETCH_HANDLE_HIT_RADIUS)
+        current_world = @state.screen_to_world(position)
+        @drag_sketch_object = object
+        @drag_mode = "sketch_rotate"
+        @sketch_rotate_initial = object.rotation
+        @sketch_rotate_initial_angle = object.rotation_angle_for({current_world.x.to_f64, current_world.y.to_f64})
+        return true
+      end
+
+      corners = object.selection_corners
+      corners.each_with_index do |corner, index|
+        corner_screen = screen_point(corner)
+        next unless handle_hit?(position, corner_screen, SKETCH_HANDLE_HIT_RADIUS)
+
+        @drag_sketch_object = object
+        @drag_mode = "sketch_resize"
+        @sketch_resize_anchor = corners[(index + 2) % 4]
+        @sketch_resize_points = object.points.map { |point| {point[0], point[1]} }
+        @sketch_resize_radius = object.radius
+        @sketch_resize_rx = object.rx
+        @sketch_resize_ry = object.ry
+        return true
+      end
+
+      false
+    end
+
     private def draw_pending_sketch_preview(painter : Qt6::QPainter) : Nil
       return unless @state.active_tool == "Sketch"
       return unless preview = build_pending_sketch_preview_object
@@ -879,6 +967,49 @@ module WargameMapToolCrystal
       painter.save
       preview.paint(painter, @state, 0.72)
       preview.draw_selection(painter, @state, @state.active_layer.accent)
+      painter.restore
+    end
+
+    private def draw_selected_sketch_handles(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Sketch"
+      return unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+      corners = object.selection_corners.map { |point| screen_point(point) }
+      return if corners.empty?
+
+      painter.save
+      accent = Qt6::Color.new(0, 120, 255)
+      handle_pen = Qt6::QPen.new(accent, 1.5)
+      line_pen = Qt6::QPen.new(accent, 1.0)
+      painter.pen = handle_pen
+      painter.brush = Qt6::Color.new(255, 255, 255)
+
+      corners.each do |corner|
+        painter.draw_rect(Qt6::RectF.new(
+          corner.x - SKETCH_HANDLE_SIZE,
+          corner.y - SKETCH_HANDLE_SIZE,
+          SKETCH_HANDLE_SIZE * 2.0,
+          SKETCH_HANDLE_SIZE * 2.0,
+        ))
+      end
+
+      rotation_handle = screen_point(object.rotation_handle(SKETCH_ROTATE_HANDLE_OFFSET / @state.zoom))
+      top_mid = Qt6::PointF.new(
+        (corners[0].x + corners[1].x) / 2.0,
+        (corners[0].y + corners[1].y) / 2.0,
+      )
+      painter.pen = line_pen
+      painter.draw_line(top_mid, rotation_handle)
+      painter.pen = handle_pen
+      painter.brush = Qt6::Color.new(0, 200, 0)
+      painter.draw_ellipse(
+        Qt6::RectF.new(
+          rotation_handle.x - SKETCH_HANDLE_SIZE,
+          rotation_handle.y - SKETCH_HANDLE_SIZE,
+          SKETCH_HANDLE_SIZE * 2.0,
+          SKETCH_HANDLE_SIZE * 2.0,
+        )
+      )
       painter.restore
     end
 
@@ -976,6 +1107,16 @@ module WargameMapToolCrystal
         rotation: style_source ? style_source.rotation : 0.0,
         draw_over_grid: style_source ? style_source.draw_over_grid : false,
       )
+    end
+
+    private def screen_point(point : Tuple(Float64, Float64)) : Qt6::PointF
+      @state.screen_point(Qt6::PointF.new(point[0], point[1]))
+    end
+
+    private def handle_hit?(position : Qt6::PointF, target : Qt6::PointF, radius : Float64) : Bool
+      dx = position.x - target.x
+      dy = position.y - target.y
+      dx * dx + dy * dy <= radius * radius
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil
