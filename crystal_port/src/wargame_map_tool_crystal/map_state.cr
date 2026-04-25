@@ -27,6 +27,7 @@ module WargameMapToolCrystal
     property fill_radius : Int32
     property sketch_freehand_closed : Bool
     property sketch_perfect_circle : Bool
+    property sketch_snap_to_grid : Bool
     property sketch_clipboard_object : SketchObject?
     property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_border_object : BorderObject?
@@ -65,6 +66,7 @@ module WargameMapToolCrystal
       @sketch_polygon_sides = 6
       @sketch_freehand_closed = false
       @sketch_perfect_circle = false
+      @sketch_snap_to_grid = false
       @sketch_clipboard_object = nil
       @pending_path_anchor = nil
       @selected_border_object = nil
@@ -102,6 +104,7 @@ module WargameMapToolCrystal
       @sketch_polygon_sides = 6
       @sketch_freehand_closed = false
       @sketch_perfect_circle = false
+      @sketch_snap_to_grid = false
       @sketch_clipboard_object = nil
       @pending_path_anchor = nil
       @selected_border_object = nil
@@ -542,6 +545,32 @@ module WargameMapToolCrystal
 
       object = clone_sketch_object(source, 10.0, 10.0)
       finalize_new_sketch(layer, object)
+    end
+
+    def snap_sketch_world_point(world : Qt6::PointF) : Qt6::PointF
+      anchor = nearest_hex_coords(world)
+      return world unless anchor
+
+      candidates = [] of Qt6::PointF
+      candidate_hexes = [anchor] + adjacent_hexes(anchor[0], anchor[1])
+      candidate_hexes.each do |coords|
+        candidates << hex_center(coords[0], coords[1])
+        candidates.concat(hex_points(coords[0], coords[1]))
+      end
+
+      best_point = candidates.first?
+      return world unless best_point
+
+      best_distance = squared_distance(world, best_point)
+      candidates.each do |candidate|
+        distance = squared_distance(world, candidate)
+        next unless distance < best_distance
+
+        best_point = candidate
+        best_distance = distance
+      end
+
+      best_point
     end
 
     def duplicate_selected_asset : AssetObject?
@@ -2260,6 +2289,27 @@ module WargameMapToolCrystal
       best
     end
 
+    def nearest_hex_coords(world : Qt6::PointF) : Tuple(Int32, Int32)?
+      best = nil
+      best_distance = Float64::INFINITY
+
+      @rows.times do |row|
+        @cols.times do |col|
+          center = hex_center(col, row)
+          dx = center.x - world.x
+          dy = center.y - world.y
+          distance = Math.sqrt(dx * dx + dy * dy)
+
+          if distance < best_distance
+            best_distance = distance
+            best = {col, row}
+          end
+        end
+      end
+
+      best
+    end
+
     def neighboring_hexes?(col_a : Int32, row_a : Int32, col_b : Int32, row_b : Int32) : Bool
       return false unless valid_hex_coord?(col_a, row_a) && valid_hex_coord?(col_b, row_b)
 
@@ -2737,6 +2787,12 @@ module WargameMapToolCrystal
       else
         "#%02x%02x%02x" % {color.red, color.green, color.blue}
       end
+    end
+
+    private def squared_distance(point_a : Qt6::PointF, point_b : Qt6::PointF) : Float64
+      dx = point_a.x - point_b.x
+      dy = point_a.y - point_b.y
+      dx * dx + dy * dy
     end
 
     private def object_opacity(value : JSON::Any?, default : Float64 = 1.0) : Float64

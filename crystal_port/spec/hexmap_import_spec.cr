@@ -263,6 +263,20 @@ describe WargameMapToolCrystal::MapState do
     state.sketch_layer.not_nil!.sketch_count.should eq(2)
     state.selected_sketch_object.should eq(pasted)
   end
+
+  it "snaps sketch points to nearby hex centers and corners" do
+    state = WargameMapToolCrystal::MapState.new
+
+    center = state.hex_center(3, 3)
+    snapped_center = state.snap_sketch_world_point(Qt6::PointF.new(center.x + 3.0, center.y - 2.0))
+    snapped_center.x.should eq(center.x)
+    snapped_center.y.should eq(center.y)
+
+    corner = state.hex_points(3, 3).first
+    snapped_corner = state.snap_sketch_world_point(Qt6::PointF.new(corner.x + 2.0, corner.y + 1.0))
+    snapped_corner.x.should eq(corner.x)
+    snapped_corner.y.should eq(corner.y)
+  end
 end
 
 describe WargameMapToolCrystal::SketchObject do

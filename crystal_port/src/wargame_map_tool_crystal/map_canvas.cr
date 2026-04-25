@@ -201,7 +201,7 @@ module WargameMapToolCrystal
               handled_press = true
               refresh
             else
-              world = @state.screen_to_world(event.position)
+              world = snapped_sketch_world_point(@state.screen_to_world(event.position), @state.sketch_shape_type != "freehand")
               if @state.sketch_shape_type == "freehand"
                 @sketch_draw_points << {world.x.to_f64, world.y.to_f64}
                 @drag_mode = "sketch_freehand_pending"
@@ -375,7 +375,7 @@ module WargameMapToolCrystal
               @drag_mode = "sketch_draw"
               @state.hover_screen = event.position
               @state.hover_hex = @state.pick_hex(event.position)
-              @sketch_preview_end = @state.screen_to_world(event.position)
+              @sketch_preview_end = snapped_sketch_world_point(@state.screen_to_world(event.position), true)
             elsif @drag_mode == "sketch_freehand_pending" || @drag_mode == "sketch_freehand_draw"
               @drag_mode = "sketch_freehand_draw"
               @state.hover_screen = event.position
@@ -951,6 +951,12 @@ module WargameMapToolCrystal
       end
 
       @sketch_draw_points << point
+    end
+
+    private def snapped_sketch_world_point(world : Qt6::PointF, allow_snap : Bool = true) : Qt6::PointF
+      return world unless allow_snap && @state.sketch_snap_to_grid
+
+      @state.snap_sketch_world_point(world)
     end
 
     private def start_sketch_handle_interaction(position : Qt6::PointF, object : SketchObject) : Bool
