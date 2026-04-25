@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "grid": {
+    "hex_size": 42.0,
+    "hex_size_mm": 19.0,
+    "width": 7,
+    "height": 5,
+    "orientation": "flat",
+    "line_width": 1.0,
+    "edge_color": "#000000",
+    "show_center_dots": false,
+    "show_coordinates": true,
+    "first_row_offset": "odd",
+    "center_dot_size": 3.0,
+    "center_dot_color": "#000000",
+    "coord_position": "top",
+    "coord_format": "numeric_dot",
+    "show_border": false,
+    "border_color": "#000000",
+    "coord_offset_y": 0.0,
+    "coord_font_scale": 18,
+    "coord_start_one": false,
+    "border_margin": 2.0,
+    "border_fill": false,
+    "border_fill_color": "#ffffff",
+    "half_hexes": false,
+    "grid_style": "lines",
+    "center_dot_outline": false,
+    "center_dot_outline_width": 1.0,
+    "center_dot_outline_color": "#ffffff",
+    "grid_opacity": 100,
+    "center_dot_opacity": 100,
+    "coord_opacity": 100,
+    "megahex_opacity": 100,
+    "megahex_enabled": false,
+    "megahex_radius": 1,
+    "megahex_mode": "hex_edges",
+    "megahex_color": "#646464",
+    "megahex_width": 3.0,
+    "megahex_offset_q": 0,
+    "megahex_offset_r": 0,
+    "canvas_bg_color": "#2b2b2b",
+    "show_grid": true,
+    "global_lighting_enabled": false,
+    "global_lighting_color": "#ffdc64",
+    "global_lighting_opacity": 0,
+    "grain_enabled": false,
+    "grain_intensity": 20,
+    "grain_scale": 1.0,
+    "grain_monochrome": true,
+    "grain_seed": 42
+  },
+  "layers": [
+    {
+      "id": "bgfixture",
+      "name": "Image",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "background",
+      "image_path": "../../../assets/assets/classic_orchard.png",
+      "offset_x": 18.0,
+      "offset_y": -12.0,
+      "scale": 0.8,
+      "clip_to_grid": false
+    },
+    {
+      "id": "fillfixture",
+      "name": "Terrain",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "fill",
+      "hexes": {
+        "2,1": "#88aa55",
+        "4,0": "#557799"
+      },
+      "dot_colors": {},
+      "coord_colors": {}
+    },
+    {
+      "id": "hexsidefixture",
+      "name": "Hexsides",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "hexside",
+      "hexsides": [
+        {
+          "id": "hexsideobj",
+          "hex_a_q": 1,
+          "hex_a_r": 1,
+          "hex_b_q": 2,
+          "hex_b_r": 1,
+          "color": "#336699",
+          "width": 2.5,
+          "opacity": 0.8,
+          "random_seed": 7
+        }
+      ]
+    },
+    {
+      "id": "borderfixture",
+      "name": "Borders",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "border",
+      "borders": [
+        {
+          "id": "borderobj",
+          "hex_a_q": 2,
+          "hex_a_r": 1,
+          "hex_b_q": 2,
+          "hex_b_r": 2,
+          "color": "#663300",
+          "width": 3.5,
+          "line_type": "dashed",
+          "element_size": 4.0,
+          "gap_size": 4.0
+        }
+      ]
+    },
+    {
+      "id": "pathfixture",
+      "name": "Paths",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "path",
+      "paths": [
+        {
+          "id": "pathobj",
+          "hex_a_q": 0,
+          "hex_a_r": 0,
+          "hex_b_q": 1,
+          "hex_b_r": 0,
+          "color": "#aa4422",
+          "width": 2.25,
+          "line_type": "dotted",
+          "dash_length": 6.0,
+          "gap_length": 4.0,
+          "random_seed": 11,
+          "opacity": 0.7
+        }
+      ]
+    },
+    {
+      "id": "freeformfixture",
+      "name": "Freeform Paths",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "freeform_path",
+      "paths": [
+        {
+          "id": "freeformobj",
+          "points": [
+            [10.0, 20.0],
+            [40.0, 55.0],
+            [80.0, 20.0]
+          ],
+          "color": "#994433",
+          "width": 4.0,
+          "opacity": 0.6
+        }
+      ]
+    },
+    {
+      "id": "drawfixture",
+      "name": "Draw",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "draw",
+      "channels": []
+    },
+    {
+      "id": "textfixture",
+      "name": "Labels",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "text",
+      "objects": [
+        {
+          "id": "textobj",
+          "text": "Depot",
+          "x": 100.0,
+          "y": 120.0,
+          "font_family": "Arial",
+          "font_size": 14.0,
+          "bold": true,
+          "color": "#112233",
+          "alignment": "center",
+          "opacity": 0.9,
+          "rotation": 15.0
+        }
+      ]
+    },
+    {
+      "id": "sketchfixture",
+      "name": "Sketches",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "sketch",
+      "objects": []
+    },
+    {
+      "id": "assetfixture",
+      "name": "Units",
+      "visible": true,
+      "opacity": 1.0,
+      "type": "asset",
+      "objects": [
+        {
+          "id": "assetobj",
+          "image": "builtin:operational/operational_poi_town.png",
+          "x": 180.0,
+          "y": 90.0,
+          "scale": 0.5,
+          "rotation": 10.0,
+          "snap_to_hex": false
+        }
+      ]
+    }
+  ]
+}
