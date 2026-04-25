@@ -87,6 +87,19 @@ describe WargameMapToolCrystal::MapState do
 
     begin
       state.load_hexmap(fixture_path).should_not be_nil
+      sketch = state.sketch_layer.not_nil!
+      sketch.shadow_enabled = true
+      sketch.shadow_type = "inner"
+      sketch.shadow_opacity = 0.65
+      sketch.shadow_angle = 135.0
+      sketch.shadow_distance = 9.0
+      sketch.shadow_spread = 22.0
+      sketch.shadow_size = 7.0
+      sketch.objects.first.stroke_type = "dashed"
+      sketch.objects.first.dash_length = 11.0
+      sketch.objects.first.gap_length = 5.5
+      sketch.objects.first.stroke_cap = "square"
+      sketch.objects.first.draw_over_grid = true
       state.save_hexmap(export_path)
 
       exported = JSON.parse(File.read(export_path))
@@ -100,6 +113,18 @@ describe WargameMapToolCrystal::MapState do
       sketch_layer.should_not be_nil
       sketch_layer.not_nil!["objects"].as_a.size.should eq(1)
       sketch_layer.not_nil!["objects"].as_a.first["shape_type"].as_s.should eq("rect")
+      sketch_layer.not_nil!["shadow_enabled"].as_bool.should be_true
+      sketch_layer.not_nil!["shadow_type"].as_s.should eq("inner")
+      sketch_layer.not_nil!["shadow_opacity"].as_f.should eq(0.65)
+      sketch_layer.not_nil!["shadow_angle"].as_f.should eq(135.0)
+      sketch_layer.not_nil!["shadow_distance"].as_f.should eq(9.0)
+      sketch_layer.not_nil!["shadow_spread"].as_f.should eq(22.0)
+      sketch_layer.not_nil!["shadow_size"].as_f.should eq(7.0)
+      sketch_layer.not_nil!["objects"].as_a.first["stroke_type"].as_s.should eq("dashed")
+      sketch_layer.not_nil!["objects"].as_a.first["dash_length"].as_f.should eq(11.0)
+      sketch_layer.not_nil!["objects"].as_a.first["gap_length"].as_f.should eq(5.5)
+      sketch_layer.not_nil!["objects"].as_a.first["stroke_cap"].as_s.should eq("square")
+      sketch_layer.not_nil!["objects"].as_a.first["draw_over_grid"].as_bool.should be_true
 
       asset_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "asset" }
       asset_layer.should_not be_nil
@@ -112,6 +137,10 @@ describe WargameMapToolCrystal::MapState do
       roundtrip.asset_layer.not_nil!.asset_count.should eq(1)
       roundtrip.asset_layer.not_nil!.objects.first.has_image?.should be_true
       roundtrip.sketch_layer.not_nil!.sketch_count.should eq(1)
+      roundtrip.sketch_layer.not_nil!.shadow_enabled.should be_true
+      roundtrip.sketch_layer.not_nil!.shadow_type.should eq("inner")
+      roundtrip.sketch_layer.not_nil!.objects.first.stroke_cap.should eq("square")
+      roundtrip.sketch_layer.not_nil!.objects.first.draw_over_grid.should be_true
       roundtrip.text_layer.not_nil!.text_count.should eq(1)
       roundtrip.path_layer.not_nil!.path_count.should eq(1)
     ensure
@@ -358,8 +387,20 @@ describe WargameMapToolCrystal::SketchObject do
     x_values = object.points.map(&.[0])
     y_values = object.points.map(&.[1])
     (x_values.max - x_values.min).should be_close(42.0, 0.001)
-    (y_values.max - y_values.min).should be_close(62.0, 0.001)
+    (y_values.max - y_values.min).should be_close(63.48148148148148, 0.001)
     object.points.size.should eq(4)
     object.closed.should be_true
+  end
+
+  it "builds smooth freehand paths with cubic segments" do
+    object = WargameMapToolCrystal::SketchObject.new(
+      shape_type: "freehand",
+      points: [{0.0, 0.0}, {12.0, 5.0}, {22.0, 18.0}, {34.0, 21.0}],
+      stroke_width: 2.0,
+    )
+
+    path = object.build_path
+    element_types = Array.new(path.element_count) { |index| path.element_at(index).type }
+    element_types.includes?(Qt6::PainterPathElementType::CurveTo).should be_true
   end
 end

@@ -120,12 +120,23 @@ module WargameMapToolCrystal
     @sketch_snap_to_grid_check : Qt6::CheckBox
     @sketch_stroke_width_spin : Qt6::DoubleSpinBox
     @sketch_stroke_type_combo : Qt6::ComboBox
+    @sketch_dash_length_spin : Qt6::DoubleSpinBox
+    @sketch_gap_length_spin : Qt6::DoubleSpinBox
+    @sketch_stroke_cap_combo : Qt6::ComboBox
     @sketch_stroke_color_button : Qt6::PushButton
     @sketch_fill_check : Qt6::CheckBox
     @sketch_fill_color_button : Qt6::PushButton
     @sketch_fill_opacity_spin : Qt6::DoubleSpinBox
     @sketch_rotation_spin : Qt6::DoubleSpinBox
     @sketch_draw_over_grid_check : Qt6::CheckBox
+    @sketch_shadow_enabled_check : Qt6::CheckBox
+    @sketch_shadow_type_combo : Qt6::ComboBox
+    @sketch_shadow_color_button : Qt6::PushButton
+    @sketch_shadow_opacity_spin : Qt6::DoubleSpinBox
+    @sketch_shadow_angle_spin : Qt6::DoubleSpinBox
+    @sketch_shadow_distance_spin : Qt6::DoubleSpinBox
+    @sketch_shadow_spread_spin : Qt6::DoubleSpinBox
+    @sketch_shadow_size_spin : Qt6::DoubleSpinBox
     @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
     @asset_rotation_spin : Qt6::DoubleSpinBox
@@ -203,12 +214,23 @@ module WargameMapToolCrystal
       @sketch_snap_to_grid_check = Qt6::CheckBox.new("Snap To Grid")
       @sketch_stroke_width_spin = Qt6::DoubleSpinBox.new
       @sketch_stroke_type_combo = Qt6::ComboBox.new
+      @sketch_dash_length_spin = Qt6::DoubleSpinBox.new
+      @sketch_gap_length_spin = Qt6::DoubleSpinBox.new
+      @sketch_stroke_cap_combo = Qt6::ComboBox.new
       @sketch_stroke_color_button = Qt6::PushButton.new("Sketch Stroke")
       @sketch_fill_check = Qt6::CheckBox.new("Enable Fill")
       @sketch_fill_color_button = Qt6::PushButton.new("Sketch Fill")
       @sketch_fill_opacity_spin = Qt6::DoubleSpinBox.new
       @sketch_rotation_spin = Qt6::DoubleSpinBox.new
       @sketch_draw_over_grid_check = Qt6::CheckBox.new("Draw Over Grid")
+      @sketch_shadow_enabled_check = Qt6::CheckBox.new("Enable Layer Shadow")
+      @sketch_shadow_type_combo = Qt6::ComboBox.new
+      @sketch_shadow_color_button = Qt6::PushButton.new("Shadow Color")
+      @sketch_shadow_opacity_spin = Qt6::DoubleSpinBox.new
+      @sketch_shadow_angle_spin = Qt6::DoubleSpinBox.new
+      @sketch_shadow_distance_spin = Qt6::DoubleSpinBox.new
+      @sketch_shadow_spread_spin = Qt6::DoubleSpinBox.new
+      @sketch_shadow_size_spin = Qt6::DoubleSpinBox.new
       @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
       @asset_rotation_spin = Qt6::DoubleSpinBox.new
@@ -1349,7 +1371,50 @@ module WargameMapToolCrystal
                              else
                                "solid"
                              end
+        refresh_inspector
         @canvas.refresh("Updated sketch stroke style")
+      end
+
+      @sketch_dash_length_spin.set_range(0.1, 30.0)
+      @sketch_dash_length_spin.decimals = 1
+      @sketch_dash_length_spin.single_step = 0.1
+      @sketch_dash_length_spin.suffix = " px"
+      @sketch_dash_length_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.dash_length = value
+        @canvas.refresh("Updated sketch dash length")
+      end
+
+      @sketch_gap_length_spin.set_range(0.1, 30.0)
+      @sketch_gap_length_spin.decimals = 1
+      @sketch_gap_length_spin.single_step = 0.1
+      @sketch_gap_length_spin.suffix = " px"
+      @sketch_gap_length_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.gap_length = value
+        @canvas.refresh("Updated sketch gap length")
+      end
+
+      @sketch_stroke_cap_combo << "Round"
+      @sketch_stroke_cap_combo << "Flat"
+      @sketch_stroke_cap_combo << "Square"
+      @sketch_stroke_cap_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.stroke_cap = case index
+                            when 1
+                              "flat"
+                            when 2
+                              "square"
+                            else
+                              "round"
+                            end
+        @canvas.refresh("Updated sketch stroke cap")
       end
 
       @sketch_stroke_color_button.on_clicked do
@@ -1414,6 +1479,97 @@ module WargameMapToolCrystal
 
         object.draw_over_grid = checked
         @canvas.refresh(checked ? "Sketch moved over grid" : "Sketch moved under grid")
+      end
+
+      @sketch_shadow_type_combo << "Outer"
+      @sketch_shadow_type_combo << "Inner"
+
+      @sketch_shadow_enabled_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_enabled = checked
+        refresh_inspector
+        @canvas.refresh(checked ? "Sketch layer shadow enabled" : "Sketch layer shadow disabled")
+      end
+
+      @sketch_shadow_type_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_type = index == 1 ? "inner" : "outer"
+        @canvas.refresh("Updated sketch layer shadow type")
+      end
+
+      @sketch_shadow_color_button.on_clicked do
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        color = Qt6::ColorDialog.get_color(@widget, layer.shadow_color, title: "Select Sketch Layer Shadow Color")
+        next unless color
+
+        layer.shadow_color = color
+        @sketch_shadow_color_button.text = color_button_text("Shadow", color)
+        @canvas.refresh("Updated sketch layer shadow color")
+      end
+
+      @sketch_shadow_opacity_spin.set_range(0.0, 1.0)
+      @sketch_shadow_opacity_spin.decimals = 2
+      @sketch_shadow_opacity_spin.single_step = 0.05
+      @sketch_shadow_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_opacity = value
+        @canvas.refresh("Updated sketch layer shadow opacity")
+      end
+
+      @sketch_shadow_angle_spin.set_range(0.0, 360.0)
+      @sketch_shadow_angle_spin.decimals = 1
+      @sketch_shadow_angle_spin.single_step = 5.0
+      @sketch_shadow_angle_spin.suffix = " deg"
+      @sketch_shadow_angle_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_angle = value
+        @canvas.refresh("Updated sketch layer shadow angle")
+      end
+
+      @sketch_shadow_distance_spin.set_range(0.0, 50.0)
+      @sketch_shadow_distance_spin.decimals = 1
+      @sketch_shadow_distance_spin.single_step = 1.0
+      @sketch_shadow_distance_spin.suffix = " px"
+      @sketch_shadow_distance_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_distance = value
+        @canvas.refresh("Updated sketch layer shadow distance")
+      end
+
+      @sketch_shadow_spread_spin.set_range(0.0, 100.0)
+      @sketch_shadow_spread_spin.decimals = 0
+      @sketch_shadow_spread_spin.single_step = 5.0
+      @sketch_shadow_spread_spin.suffix = " %"
+      @sketch_shadow_spread_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_spread = value
+        @canvas.refresh("Updated sketch layer shadow spread")
+      end
+
+      @sketch_shadow_size_spin.set_range(0.0, 50.0)
+      @sketch_shadow_size_spin.decimals = 1
+      @sketch_shadow_size_spin.single_step = 1.0
+      @sketch_shadow_size_spin.suffix = " px"
+      @sketch_shadow_size_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless layer = @state.sketch_layer
+
+        layer.shadow_size = value
+        @canvas.refresh("Updated sketch layer shadow size")
       end
 
       @asset_scale_spin.set_range(0.1, 4.0)
@@ -1627,6 +1783,12 @@ module WargameMapToolCrystal
         column << @sketch_stroke_width_spin
         column << Qt6::Label.new("Stroke Style")
         column << @sketch_stroke_type_combo
+        column << Qt6::Label.new("Dash Length")
+        column << @sketch_dash_length_spin
+        column << Qt6::Label.new("Gap Length")
+        column << @sketch_gap_length_spin
+        column << Qt6::Label.new("Stroke Cap")
+        column << @sketch_stroke_cap_combo
         column << @sketch_stroke_color_button
         column << @sketch_fill_check
         column << @sketch_fill_color_button
@@ -1635,6 +1797,21 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Rotation")
         column << @sketch_rotation_spin
         column << @sketch_draw_over_grid_check
+        column << Qt6::Label.new("Layer Shadow")
+        column << @sketch_shadow_enabled_check
+        column << Qt6::Label.new("Shadow Type")
+        column << @sketch_shadow_type_combo
+        column << @sketch_shadow_color_button
+        column << Qt6::Label.new("Shadow Opacity")
+        column << @sketch_shadow_opacity_spin
+        column << Qt6::Label.new("Shadow Angle")
+        column << @sketch_shadow_angle_spin
+        column << Qt6::Label.new("Shadow Distance")
+        column << @sketch_shadow_distance_spin
+        column << Qt6::Label.new("Shadow Spread")
+        column << @sketch_shadow_spread_spin
+        column << Qt6::Label.new("Shadow Size")
+        column << @sketch_shadow_size_spin
       end
       asset_controls = Qt6::Widget.new
       asset_controls.vbox do |column|
@@ -1877,6 +2054,16 @@ module WargameMapToolCrystal
                                                   else
                                                     0
                                                   end
+        @sketch_dash_length_spin.value = object.dash_length
+        @sketch_gap_length_spin.value = object.gap_length
+        @sketch_stroke_cap_combo.current_index = case object.stroke_cap
+                                                 when "flat"
+                                                   1
+                                                 when "square"
+                                                   2
+                                                 else
+                                                   0
+                                                 end
         @sketch_stroke_color_button.text = color_button_text("Sketch Stroke", object.stroke_color)
         @sketch_fill_check.checked = object.fill_enabled
         @sketch_fill_color_button.text = color_button_text("Sketch Fill", object.fill_color)
@@ -1885,6 +2072,10 @@ module WargameMapToolCrystal
         @sketch_draw_over_grid_check.checked = object.draw_over_grid
         @sketch_stroke_width_spin.enabled = true
         @sketch_stroke_type_combo.enabled = true
+        dash_controls_enabled = object.stroke_type != "solid"
+        @sketch_dash_length_spin.enabled = dash_controls_enabled
+        @sketch_gap_length_spin.enabled = dash_controls_enabled
+        @sketch_stroke_cap_combo.enabled = true
         @sketch_stroke_color_button.enabled = true
         @sketch_fill_check.enabled = true
         @sketch_fill_color_button.enabled = object.fill_enabled
@@ -1916,6 +2107,9 @@ module WargameMapToolCrystal
         @sketch_label.text = "Sketch: none selected"
         @sketch_stroke_width_spin.value = 2.0
         @sketch_stroke_type_combo.current_index = 0
+        @sketch_dash_length_spin.value = 8.0
+        @sketch_gap_length_spin.value = 4.0
+        @sketch_stroke_cap_combo.current_index = 0
         @sketch_stroke_color_button.text = "Sketch Stroke"
         @sketch_fill_check.checked = false
         @sketch_fill_color_button.text = "Sketch Fill"
@@ -1924,12 +2118,51 @@ module WargameMapToolCrystal
         @sketch_draw_over_grid_check.checked = false
         @sketch_stroke_width_spin.enabled = false
         @sketch_stroke_type_combo.enabled = false
+        @sketch_dash_length_spin.enabled = false
+        @sketch_gap_length_spin.enabled = false
+        @sketch_stroke_cap_combo.enabled = false
         @sketch_stroke_color_button.enabled = false
         @sketch_fill_check.enabled = false
         @sketch_fill_color_button.enabled = false
         @sketch_fill_opacity_spin.enabled = false
         @sketch_rotation_spin.enabled = false
         @sketch_draw_over_grid_check.enabled = false
+      end
+      if layer = @state.sketch_layer
+        @sketch_shadow_enabled_check.checked = layer.shadow_enabled
+        @sketch_shadow_type_combo.current_index = layer.shadow_type == "inner" ? 1 : 0
+        @sketch_shadow_color_button.text = color_button_text("Shadow", layer.shadow_color)
+        @sketch_shadow_opacity_spin.value = layer.shadow_opacity
+        @sketch_shadow_angle_spin.value = layer.shadow_angle
+        @sketch_shadow_distance_spin.value = layer.shadow_distance
+        @sketch_shadow_spread_spin.value = layer.shadow_spread
+        @sketch_shadow_size_spin.value = layer.shadow_size
+        shadow_controls_enabled = layer.shadow_enabled
+        @sketch_shadow_enabled_check.enabled = true
+        @sketch_shadow_type_combo.enabled = shadow_controls_enabled
+        @sketch_shadow_color_button.enabled = shadow_controls_enabled
+        @sketch_shadow_opacity_spin.enabled = shadow_controls_enabled
+        @sketch_shadow_angle_spin.enabled = shadow_controls_enabled
+        @sketch_shadow_distance_spin.enabled = shadow_controls_enabled
+        @sketch_shadow_spread_spin.enabled = shadow_controls_enabled
+        @sketch_shadow_size_spin.enabled = shadow_controls_enabled
+      else
+        @sketch_shadow_enabled_check.checked = false
+        @sketch_shadow_type_combo.current_index = 0
+        @sketch_shadow_color_button.text = "Shadow Color"
+        @sketch_shadow_opacity_spin.value = 0.5
+        @sketch_shadow_angle_spin.value = 120.0
+        @sketch_shadow_distance_spin.value = 5.0
+        @sketch_shadow_spread_spin.value = 0.0
+        @sketch_shadow_size_spin.value = 5.0
+        @sketch_shadow_enabled_check.enabled = false
+        @sketch_shadow_type_combo.enabled = false
+        @sketch_shadow_color_button.enabled = false
+        @sketch_shadow_opacity_spin.enabled = false
+        @sketch_shadow_angle_spin.enabled = false
+        @sketch_shadow_distance_spin.enabled = false
+        @sketch_shadow_spread_spin.enabled = false
+        @sketch_shadow_size_spin.enabled = false
       end
       if object = (@state.selected_asset_object if @state.selected_asset_present?)
         @asset_label.text = if path = object.image_path
@@ -2041,7 +2274,7 @@ module WargameMapToolCrystal
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_sketch_object if @state.selected_sketch_present?)
-                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag a corner handle to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, #{sketch_creation_help_text}, and when snap-to-grid is enabled the move and resize handles also snap. Press Delete/right-click to remove it, or edit stroke, fill, rotation, draw-over-grid, and snap settings in the inspector."
+                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag a corner handle to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, #{sketch_creation_help_text}, and when snap-to-grid is enabled the move and resize handles also snap. Press Delete/right-click to remove it, or edit stroke width/style/dash/cap, fill, rotation, draw-over-grid, and sketch-layer shadow settings in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
@@ -2051,7 +2284,7 @@ module WargameMapToolCrystal
                              elsif @state.active_tool == "Freeform" && (freeform_layer = @state.freeform_path_layer)
                                "Freeform tool active at #{@state.zoom.round(2)}x. Left-drag draws a new freeform path in world space, click an existing stroke to select it, right-click removes the hovered stroke, and #{freeform_layer.path_count} freeform paths are currently in the slice."
                              elsif @state.active_tool == "Sketch" && (sketch_layer = @state.sketch_layer)
-                               "Sketch tool active at #{@state.zoom.round(2)}x with #{@state.sketch_shape_label.downcase} mode. #{sketch_creation_help_text.capitalize}, click an existing sketch to select it, drag the selected sketch to move it, drag its corner handles to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, and right-click/Delete removes the hovered or selected sketch. When snap-to-grid is enabled, both drawing and select-mode move/resize interactions snap to the nearest hex center or corner. The inspector now controls new-shape mode, snap-to-grid, and selected-sketch styling. #{sketch_layer.sketch_count} sketches are currently in the slice."
+                               "Sketch tool active at #{@state.zoom.round(2)}x with #{@state.sketch_shape_label.downcase} mode. #{sketch_creation_help_text.capitalize}, click an existing sketch to select it, drag the selected sketch to move it, drag its corner handles to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, and right-click/Delete removes the hovered or selected sketch. When snap-to-grid is enabled, both drawing and select-mode move/resize interactions snap to the nearest hex center or corner. The inspector now controls new-shape mode, selected-sketch stroke/fill/rotation styling, actual draw-over-grid behavior, and sketch-layer shadow settings. #{sketch_layer.sketch_count} sketches are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else

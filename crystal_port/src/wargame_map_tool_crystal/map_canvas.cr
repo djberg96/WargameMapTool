@@ -832,7 +832,11 @@ module WargameMapToolCrystal
       @state.layers.each do |layer|
         next unless layer.visible
 
-        layer.paint(painter, @state)
+        if layer.is_a?(SketchLayer)
+          layer.paint_filtered(painter, @state, false)
+        else
+          layer.paint(painter, @state)
+        end
       end
     end
 
@@ -856,6 +860,10 @@ module WargameMapToolCrystal
           painter.pen = Qt6::Color.new(96, 92, 84)
           painter.draw_text(Qt6::PointF.new(center.x + 6.0, center.y - 7.0), @state.hex_label(col, row))
         end
+      end
+
+      if layer = @state.sketch_layer
+        layer.paint_filtered(painter, @state, true) if layer.visible
       end
     end
 

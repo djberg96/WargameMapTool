@@ -1275,10 +1275,27 @@ module WargameMapToolCrystal
         ))
       when "freehand"
         return path if @points.size < 2
-        path.move_to(pointf(@points[0]))
-        @points.each_with_index do |point, index|
-          next if index == 0
-          path.line_to(pointf(point))
+        if @points.size == 2
+          path.move_to(pointf(@points[0]))
+          path.line_to(pointf(@points[1]))
+        else
+          path.move_to(pointf(@points[0]))
+          smooth_points = [@points.first] + @points + [@points.last]
+          (1...(smooth_points.size - 2)).each do |index|
+            p0 = smooth_points[index - 1]
+            p1 = smooth_points[index]
+            p2 = smooth_points[index + 1]
+            p3 = smooth_points[index + 2]
+            control_1 = Qt6::PointF.new(
+              p1[0] + (p2[0] - p0[0]) / 6.0,
+              p1[1] + (p2[1] - p0[1]) / 6.0,
+            )
+            control_2 = Qt6::PointF.new(
+              p2[0] - (p3[0] - p1[0]) / 6.0,
+              p2[1] - (p3[1] - p1[1]) / 6.0,
+            )
+            path.cubic_to(control_1, control_2, pointf(p2))
+          end
         end
         path.close_subpath if @closed && @points.size >= 3
       else
@@ -1481,6 +1498,10 @@ module WargameMapToolCrystal
       painter.restore
     end
 
+    def screen_path(state : MapState) : Qt6::QPainterPath
+      build_screen_path(state)
+    end
+
     def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
       path = build_screen_path(state)
       return if path.empty?
@@ -1608,14 +1629,24 @@ module WargameMapToolCrystal
                       else
                         Qt6::PenCapStyle::RoundCap
                       end
+      pen.join_style = Qt6::PenJoinStyle::RoundJoin
       pen.style = case @stroke_type
                   when "dashed"
-                    Qt6::PenStyle::DashLine
+                    Qt6::PenStyle::CustomDashLine
                   when "dotted"
-                    Qt6::PenStyle::DotLine
+                    Qt6::PenStyle::CustomDashLine
                   else
                     Qt6::PenStyle::SolidLine
                   end
+      if @stroke_type != "solid"
+        pen_width = [@stroke_width, 0.5].max
+        dash_pattern = if @stroke_type == "dotted"
+                         [0.1, [@gap_length / pen_width, 0.1].max]
+                       else
+                         [[@dash_length / pen_width, 0.1].max, [@gap_length / pen_width, 0.1].max]
+                       end
+        pen.dash_pattern = dash_pattern
+      end
       pen
     end
 
@@ -1775,16 +1806,72 @@ module WargameMapToolCrystal
     end
 
     def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      paint_filtered(painter, state, nil)
+    end
+
+    def paint_filtered(painter : Qt6::QPainter, state : MapState, draw_over_grid : Bool?) : Nil
       layer_opacity = opacity / 100.0
+      paint_shadow(painter, state, layer_opacity, draw_over_grid) if @shadow_enabled && @shadow_opacity > 0.0
+
       @objects.each do |object|
+        next if !draw_over_grid.nil? && object.draw_over_grid != draw_over_grid
         object.paint(painter, state, layer_opacity)
       end
 
       if selected = state.selected_sketch_object
         return unless @objects.includes?(selected)
+        return if !draw_over_grid.nil? && selected.draw_over_grid != draw_over_grid
 
         selected.draw_selection(painter, state, accent)
       end
+    end
+
+    private def paint_shadow(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64, draw_over_grid : Bool?) : Nil
+      shadow_alpha = (@shadow_opacity * layer_opacity).clamp(0.0, 1.0)
+      return if shadow_alpha <= 0.0
+
+      radians = @shadow_angle * Math::PI / 180.0
+      offset_x = Math.cos(radians) * @shadow_distance
+      offset_y = Math.sin(radians) * @shadow_distance
+      shadow_color = Qt6::Color.new(
+        @shadow_color.red,
+        @shadow_color.green,
+        @shadow_color.blue,
+        (255.0 * shadow_alpha).round.to_i.clamp(0, 255)
+      )
+
+      @objects.each do |object|
+        next if !draw_over_grid.nil? && object.draw_over_grid != draw_over_grid
+
+        path = object.screen_path(state)
+        next if path.empty?
+
+        shadow_path = shadow_path_for(object, path, state)
+        next if shadow_path.empty?
+
+        painter.save
+        painter.clip_path = path if @shadow_type == "inner"
+        painter.clipping = true if @shadow_type == "inner"
+        painter.translate(offset_x, offset_y)
+        painter.pen = Qt6::QPen.new(Qt6::Color.new(0, 0, 0, 0), 0.0)
+        painter.brush = shadow_color
+        painter.draw_path(shadow_path)
+        painter.restore
+      end
+    end
+
+    private def shadow_path_for(object : SketchObject, path : Qt6::QPainterPath, state : MapState) : Qt6::QPainterPath
+      shadow_path = Qt6::QPainterPath.new
+      shadow_path.add_path(path) if object.fill_enabled && object.shape_type != "line"
+
+      stroke_width = [object.stroke_width * state.zoom, 1.0].max + @shadow_size + (@shadow_spread / 10.0)
+      if object.stroke_width > 0.0 || object.shape_type == "line" || shadow_path.empty?
+        stroker = Qt6::QPainterPathStroker.new
+        stroker.width = [stroke_width, 1.0].max
+        shadow_path.add_path(stroker.create_stroke(path))
+      end
+
+      shadow_path.simplified
     end
   end
 
