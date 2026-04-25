@@ -1722,6 +1722,11 @@ module WargameMapToolCrystal
         return "builtin:#{relative}"
       end
 
+      base_dir = File.dirname(File.expand_path(output_path))
+      if relative = relative_path_from(base_dir, absolute)
+        return relative
+      end
+
       absolute
     end
 
@@ -2126,6 +2131,37 @@ module WargameMapToolCrystal
       return nil unless normalized_path.starts_with?(prefix)
 
       normalized_path.byte_slice(prefix.bytesize, normalized_path.bytesize - prefix.bytesize)
+    end
+
+    private def relative_path_from(base_dir : String, target_path : String) : String?
+      normalized_base = File.expand_path(base_dir)
+      normalized_target = File.expand_path(target_path)
+      return "." if normalized_base == normalized_target
+
+      base_prefix = absolute_path_prefix(normalized_base)
+      target_prefix = absolute_path_prefix(normalized_target)
+      return nil unless base_prefix == target_prefix
+
+      base_parts = normalized_base.split('/').reject(&.empty?)
+      target_parts = normalized_target.split('/').reject(&.empty?)
+      common_length = 0
+      max_common = {base_parts.size, target_parts.size}.min
+
+      while common_length < max_common && base_parts[common_length] == target_parts[common_length]
+        common_length += 1
+      end
+
+      relative_parts = [] of String
+      (base_parts.size - common_length).times { relative_parts << ".." }
+      relative_parts.concat(target_parts[common_length..]) if common_length < target_parts.size
+      relative_parts.empty? ? "." : relative_parts.join("/")
+    end
+
+    private def absolute_path_prefix(path : String) : String
+      return "/" if path.starts_with?("/")
+      return path[0, 3] if path.size >= 3 && path[1] == ':' && (path[2] == '/' || path[2] == '\\')
+
+      ""
     end
 
     def hex_label(col : Int32, row : Int32) : String

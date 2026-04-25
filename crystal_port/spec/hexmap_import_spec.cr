@@ -105,4 +105,51 @@ describe WargameMapToolCrystal::MapState do
       File.delete(export_path) if File.exists?(export_path)
     end
   end
+
+  it "relativizes non-builtin image paths on hexmap export" do
+    fixture_path = File.expand_path("./fixtures/import_smoke.hexmap", __DIR__)
+    temp_root = "/tmp/wargame-map-tool-crystal-relative-#{Process.pid}"
+    maps_dir = "#{temp_root}/maps"
+    images_dir = "#{temp_root}/images"
+    assets_dir = "#{temp_root}/assets"
+    export_path = "#{maps_dir}/relative-export.hexmap"
+    background_copy = "#{images_dir}/background.png"
+    asset_copy = "#{assets_dir}/asset.png"
+    source_background = File.expand_path("../../assets/assets/classic_orchard.png", __DIR__)
+    source_asset = File.expand_path("../../assets/assets/operational/operational_poi_town.png", __DIR__)
+    state = WargameMapToolCrystal::MapState.new
+
+    begin
+      Dir.mkdir_p(maps_dir)
+      Dir.mkdir_p(images_dir)
+      Dir.mkdir_p(assets_dir)
+      File.write(background_copy, File.read(source_background))
+      File.write(asset_copy, File.read(source_asset))
+
+      state.load_hexmap(fixture_path).should_not be_nil
+      state.background_layer.not_nil!.load_image(background_copy).should be_true
+      state.asset_layer.not_nil!.objects.first.set_image_path(asset_copy).should be_true
+      state.save_hexmap(export_path)
+
+      exported = JSON.parse(File.read(export_path))
+      background_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "background" }
+      asset_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "asset" }
+      background_layer.should_not be_nil
+      asset_layer.should_not be_nil
+      background_layer.not_nil!["image_path"].as_s.should eq("../images/background.png")
+      asset_layer.not_nil!["objects"].as_a.first["image"].as_s.should eq("../assets/asset.png")
+
+      roundtrip = WargameMapToolCrystal::MapState.new
+      roundtrip.load_hexmap(export_path).should_not be_nil
+      roundtrip.background_layer.not_nil!.has_image?.should be_true
+      roundtrip.asset_layer.not_nil!.objects.first.has_image?.should be_true
+    ensure
+      [export_path, "#{export_path}.tmp", background_copy, asset_copy].each do |path|
+        File.delete(path) if File.exists?(path)
+      end
+      [maps_dir, images_dir, assets_dir, temp_root].each do |path|
+        Dir.delete(path) if Dir.exists?(path)
+      end
+    end
+  end
 end
