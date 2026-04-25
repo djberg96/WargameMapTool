@@ -582,6 +582,148 @@ module WargameMapToolCrystal
       true
     end
 
+    def history_snapshot : String
+      JSON.build do |json|
+        json.object do
+          json.field "version", 1
+          json.field "project_path", @project_path if @project_path
+          json.field "source_path", @source_path if @source_path
+          json.field "grid" do
+            json.object do
+              json.field "width", @cols
+              json.field "height", @rows
+              json.field "hex_size", @hex_radius
+              json.field "orientation", @grid_orientation
+              json.field "first_row_offset", @first_row_offset
+            end
+          end
+          json.field "fill_radius", @fill_radius
+          json.field "background_layer" do
+            if layer = background_layer
+              json.object do
+                write_layer_snapshot_base(json, layer)
+                json.field "image_path", layer.image_path if layer.image_path
+                json.field "offset_x", layer.offset_x
+                json.field "offset_y", layer.offset_y
+                json.field "scale", layer.scale
+              end
+            else
+              json.null
+            end
+          end
+          json.field "terrain_layer" do
+            if layer = terrain_layer
+              json.object do
+                write_layer_snapshot_base(json, layer)
+                json.field "fills" do
+                  json.array do
+                    layer.fills.each do |coords, color|
+                      json.object do
+                        json.field "col", coords[0]
+                        json.field "row", coords[1]
+                        json.field "color" do
+                          write_color_json(json, color)
+                        end
+                      end
+                    end
+                  end
+                end
+              end
+            else
+              json.null
+            end
+          end
+          json.field "border_layer" do
+            write_object_layer_snapshot(json, border_layer)
+          end
+          json.field "hexside_layer" do
+            write_object_layer_snapshot(json, hexside_layer)
+          end
+          json.field "path_layer" do
+            write_object_layer_snapshot(json, path_layer)
+          end
+          json.field "freeform_path_layer" do
+            write_object_layer_snapshot(json, freeform_path_layer)
+          end
+          json.field "text_layer" do
+            write_object_layer_snapshot(json, text_layer)
+          end
+          json.field "asset_layer" do
+            write_object_layer_snapshot(json, asset_layer)
+          end
+        end
+      end
+    end
+
+    def restore_history_snapshot(snapshot : String) : Bool
+      data = JSON.parse(snapshot)
+
+      saved_active_tool = TOOL_NAMES.includes?(@active_tool) ? @active_tool : "Fill"
+      saved_active_layer_index = @active_layer_index
+
+      clear_ported_layer_content
+      @project_path = data["project_path"]?.try(&.as_s?)
+      @source_path = data["source_path"]?.try(&.as_s?)
+
+      if grid_data = data["grid"]?
+        @cols = (grid_data["width"]?.try(&.as_i?) || @cols).to_i32.clamp(1, 500)
+        @rows = (grid_data["height"]?.try(&.as_i?) || @rows).to_i32.clamp(1, 500)
+        @hex_radius = (json_number(grid_data["hex_size"]?) || @hex_radius).clamp(6.0, 256.0)
+        @grid_orientation = normalize_orientation(grid_data["orientation"]?.try(&.as_s?))
+        @first_row_offset = normalize_row_offset(grid_data["first_row_offset"]?.try(&.as_s?))
+      end
+      @fill_radius = (data["fill_radius"]?.try(&.as_i?) || @fill_radius).to_i32.clamp(0, 3)
+
+      if layer_data = data["background_layer"]?
+        if layer = background_layer
+          apply_layer_snapshot_base(layer, layer_data)
+          layer.clear_image
+          if image_path = layer_data["image_path"]?.try(&.as_s?)
+            layer.load_image(image_path)
+          end
+          layer.offset_x = json_number(layer_data["offset_x"]?) || 0.0
+          layer.offset_y = json_number(layer_data["offset_y"]?) || 0.0
+          layer.scale = (json_number(layer_data["scale"]?) || 1.0).clamp(0.01, 100.0)
+        end
+      end
+
+      if layer_data = data["terrain_layer"]?
+        if layer = terrain_layer
+          apply_layer_snapshot_base(layer, layer_data)
+          layer.clear_fills
+          layer_data["fills"]?.try(&.as_a?).try do |fills|
+            fills.each do |fill_data|
+              layer.set_fill(
+                (fill_data["col"]?.try(&.as_i?) || 0).to_i32,
+                (fill_data["row"]?.try(&.as_i?) || 0).to_i32,
+                color_from_json(fill_data["color"]?, layer.accent),
+              )
+            end
+          end
+        end
+      end
+
+      restore_border_layer_snapshot(data["border_layer"]?)
+      restore_hexside_layer_snapshot(data["hexside_layer"]?)
+      restore_path_layer_snapshot(data["path_layer"]?)
+      restore_freeform_path_layer_snapshot(data["freeform_path_layer"]?)
+      restore_text_layer_snapshot(data["text_layer"]?)
+      restore_asset_layer_snapshot(data["asset_layer"]?)
+
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_freeform_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @active_tool = saved_active_tool
+      @active_layer_index = saved_active_layer_index.clamp(0, @layers.size - 1)
+      true
+    rescue
+      false
+    end
+
     def save_slice(path : String) : Nil
       File.write(path, JSON.build do |json|
         json.object do
@@ -1988,6 +2130,132 @@ module WargameMapToolCrystal
       axial_coords_to_offset(q.to_i32, r.to_i32)
     end
 
+    private def write_layer_snapshot_base(json : JSON::Builder, layer : MapLayer) : Nil
+      json.field "visible", layer.visible
+      json.field "opacity", layer.opacity
+      json.field "accent" do
+        write_color_json(json, layer.accent)
+      end
+    end
+
+    private def write_object_layer_snapshot(json : JSON::Builder, layer : BorderLayer | HexsideLayer | PathLayer | FreeformPathLayer | TextLayer | AssetLayer | Nil) : Nil
+      unless layer
+        json.null
+        return
+      end
+
+      json.object do
+        write_layer_snapshot_base(json, layer)
+        json.field "objects" do
+          json.array do
+            layer.objects.each do |object|
+              object.write_json(json)
+            end
+          end
+        end
+      end
+    end
+
+    private def apply_layer_snapshot_base(layer : MapLayer, data : JSON::Any) : Nil
+      layer.visible = data["visible"]?.try(&.as_bool?) != false
+      layer.opacity = ((data["opacity"]?.try(&.as_i?) || layer.opacity).to_i32).clamp(0, 100)
+      layer.accent = color_from_json(data["accent"]?, layer.accent)
+    end
+
+    private def restore_border_layer_snapshot(data : JSON::Any?) : Nil
+      layer = border_layer
+      return unless layer
+
+      layer.clear_borders
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_border(BorderObject.from_json(object_data))
+        end
+      end
+    end
+
+    private def restore_hexside_layer_snapshot(data : JSON::Any?) : Nil
+      layer = hexside_layer
+      return unless layer
+
+      layer.clear_hexsides
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_hexside(HexsideObject.from_json(object_data))
+        end
+      end
+    end
+
+    private def restore_path_layer_snapshot(data : JSON::Any?) : Nil
+      layer = path_layer
+      return unless layer
+
+      layer.clear_paths
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_path(PathObject.from_json(object_data))
+        end
+      end
+    end
+
+    private def restore_freeform_path_layer_snapshot(data : JSON::Any?) : Nil
+      layer = freeform_path_layer
+      return unless layer
+
+      layer.clear_paths
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_path(FreeformPathObject.from_json(object_data))
+        end
+      end
+    end
+
+    private def restore_text_layer_snapshot(data : JSON::Any?) : Nil
+      layer = text_layer
+      return unless layer
+
+      layer.clear_texts
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_text(TextObject.from_json(object_data))
+        end
+      end
+    end
+
+    private def restore_asset_layer_snapshot(data : JSON::Any?) : Nil
+      layer = asset_layer
+      return unless layer
+
+      layer.clear_assets
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          asset = AssetObject.from_json(object_data)
+          if image_path = object_data["image_path"]?.try(&.as_s?)
+            asset.set_image_path(image_path)
+          end
+          layer.add_asset(asset)
+        end
+      end
+    end
+
     private def json_number(value : JSON::Any?) : Float64?
       return nil unless value
 
@@ -2006,6 +2274,15 @@ module WargameMapToolCrystal
           (value["blue"]?.try(&.as_i?) || default.blue).to_i32,
           (value["alpha"]?.try(&.as_i?) || default.alpha).to_i32,
         )
+      end
+    end
+
+    private def write_color_json(json : JSON::Builder, color : Qt6::Color) : Nil
+      json.object do
+        json.field "red", color.red
+        json.field "green", color.green
+        json.field "blue", color.blue
+        json.field "alpha", color.alpha
       end
     end
 
@@ -2168,6 +2445,5 @@ module WargameMapToolCrystal
       letter = ('A'.ord + col).chr
       "#{letter}#{(row + 1).to_s.rjust(2, '0')}"
     end
-
   end
 end

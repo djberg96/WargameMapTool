@@ -68,11 +68,15 @@ module WargameMapToolCrystal
   CSS
 
   class MainWindow
+    HISTORY_LIMIT = 100
+
     getter widget : Qt6::MainWindow
 
     @grid_action : Qt6::Action
     @coords_action : Qt6::Action
     @asset_action : Qt6::Action
+    @undo_action : Qt6::Action
+    @redo_action : Qt6::Action
     @show_layers_action : Qt6::Action
     @show_inspector_action : Qt6::Action
     @layers_dock : Qt6::DockWidget?
@@ -127,6 +131,10 @@ module WargameMapToolCrystal
     @terrain_color_button : Qt6::PushButton
     @terrain_preset_buttons : Array(Qt6::PushButton)
     @updating_panel : Bool
+    @undo_snapshots : Array(String)
+    @redo_snapshots : Array(String)
+    @last_history_snapshot : String
+    @restoring_history : Bool
 
     def initialize
       @state = MapState.new
@@ -136,6 +144,8 @@ module WargameMapToolCrystal
       @grid_action = Qt6::Action.new("Show Grid", @widget)
       @coords_action = Qt6::Action.new("Show Coordinates", @widget)
       @asset_action = Qt6::Action.new("Show Counters", @widget)
+      @undo_action = Qt6::Action.new("Undo", @widget)
+      @redo_action = Qt6::Action.new("Redo", @widget)
       @show_layers_action = Qt6::Action.new("Show Layers", @widget)
       @show_inspector_action = Qt6::Action.new("Show Inspector", @widget)
       @layers_dock = nil
@@ -190,6 +200,10 @@ module WargameMapToolCrystal
       @terrain_color_button = Qt6::PushButton.new("Fill Color")
       @terrain_preset_buttons = build_terrain_preset_buttons
       @updating_panel = false
+      @undo_snapshots = [] of String
+      @redo_snapshots = [] of String
+      @last_history_snapshot = @state.history_snapshot
+      @restoring_history = false
 
       @status_bar = @widget.status_bar
       @status_bar.show_message("Preparing Crystal port slice")
@@ -209,6 +223,7 @@ module WargameMapToolCrystal
       refresh_layer_model
       refresh_inspector
       @layer_tree.current_index = @layer_model.index(@state.active_layer_index, 0)
+      update_history_actions
       @status_bar.show_message("Crystal port slice ready")
     end
 
@@ -266,7 +281,18 @@ module WargameMapToolCrystal
       new_action.shortcut = "Ctrl+N"
       new_action.on_triggered do
         @state.reset
+        reset_history_tracking
         refresh_all("Started a new Crystal prototype map")
+      end
+
+      @undo_action.shortcut = "Ctrl+Z"
+      @undo_action.on_triggered do
+        perform_undo
+      end
+
+      @redo_action.shortcut = "Ctrl+Shift+Z"
+      @redo_action.on_triggered do
+        perform_redo
       end
 
       open_action = Qt6::Action.new("Open Source Map…", @widget)
@@ -278,6 +304,7 @@ module WargameMapToolCrystal
           if selected.empty?
             handle_status("Open canceled")
           elsif message = @state.load_hexmap(selected)
+            reset_history_tracking
             refresh_all(message)
           else
             handle_status("Hexmap import failed")
@@ -294,6 +321,7 @@ module WargameMapToolCrystal
           selected = slice_dialog.selected_file
 
           if !selected.empty? && @state.load_slice(selected)
+            reset_history_tracking
             refresh_all("Opened #{File.basename(selected)}")
           else
             handle_status(selected.empty? ? "Open canceled" : "Crystal slice open failed")
@@ -790,6 +818,9 @@ module WargameMapToolCrystal
       file_menu.add_separator
       file_menu << quit_action
 
+      edit_menu << @undo_action
+      edit_menu << @redo_action
+      edit_menu.add_separator
       edit_menu << add_text_action
       edit_menu << add_asset_action
       edit_menu << edit_text_action
@@ -1674,8 +1705,86 @@ module WargameMapToolCrystal
     end
 
     private def handle_status(message : String) : Nil
+      track_document_history
       @status_bar.show_message(message, 1800)
       refresh_inspector
+    end
+
+    private def reset_history_tracking : Nil
+      @undo_snapshots.clear
+      @redo_snapshots.clear
+      @last_history_snapshot = @state.history_snapshot
+      update_history_actions
+    end
+
+    private def track_document_history : Nil
+      return if @restoring_history
+
+      snapshot = @state.history_snapshot
+      return if snapshot == @last_history_snapshot
+
+      @undo_snapshots << @last_history_snapshot
+      trim_history(@undo_snapshots)
+      @redo_snapshots.clear
+      @last_history_snapshot = snapshot
+      update_history_actions
+    end
+
+    private def perform_undo : Nil
+      snapshot = @undo_snapshots.pop?
+      unless snapshot
+        handle_status("Nothing to undo")
+        return
+      end
+
+      current_snapshot = @state.history_snapshot
+      @restoring_history = true
+      if @state.restore_history_snapshot(snapshot)
+        @redo_snapshots << current_snapshot
+        trim_history(@redo_snapshots)
+        @last_history_snapshot = @state.history_snapshot
+        refresh_all("Undid last change")
+      else
+        @undo_snapshots << snapshot
+        handle_status("Undo failed")
+      end
+    ensure
+      @restoring_history = false
+      update_history_actions
+    end
+
+    private def perform_redo : Nil
+      snapshot = @redo_snapshots.pop?
+      unless snapshot
+        handle_status("Nothing to redo")
+        return
+      end
+
+      current_snapshot = @state.history_snapshot
+      @restoring_history = true
+      if @state.restore_history_snapshot(snapshot)
+        @undo_snapshots << current_snapshot
+        trim_history(@undo_snapshots)
+        @last_history_snapshot = @state.history_snapshot
+        refresh_all("Redid last change")
+      else
+        @redo_snapshots << snapshot
+        handle_status("Redo failed")
+      end
+    ensure
+      @restoring_history = false
+      update_history_actions
+    end
+
+    private def trim_history(entries : Array(String)) : Nil
+      while entries.size > HISTORY_LIMIT
+        entries.shift
+      end
+    end
+
+    private def update_history_actions : Nil
+      @undo_action.enabled = !@undo_snapshots.empty?
+      @redo_action.enabled = !@redo_snapshots.empty?
     end
 
     private def color_button_text(prefix : String, color : Qt6::Color) : String

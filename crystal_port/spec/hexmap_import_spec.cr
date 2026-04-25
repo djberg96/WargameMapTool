@@ -152,4 +152,38 @@ describe WargameMapToolCrystal::MapState do
       end
     end
   end
+
+  it "restores document snapshots without overwriting editor view state" do
+    fixture_path = File.expand_path("./fixtures/import_smoke.hexmap", __DIR__)
+    state = WargameMapToolCrystal::MapState.new
+
+    state.load_hexmap(fixture_path).should_not be_nil
+    state.show_grid = false
+    state.show_coordinates = false
+    state.show_assets = false
+    state.active_tool = "Asset"
+    state.fill_radius = 2
+
+    snapshot = state.history_snapshot
+    original_asset_scale = state.asset_layer.not_nil!.objects.first.scale
+
+    state.background_layer.not_nil!.offset_x = 144.0
+    state.terrain_layer.not_nil!.set_fill(0, 0, Qt6::Color.new(12, 34, 56)).should be_true
+    state.text_layer.not_nil!.objects.first.text = "Forward HQ"
+    state.asset_layer.not_nil!.objects.first.scale = 1.9
+    state.fill_radius = 0
+
+    state.restore_history_snapshot(snapshot).should be_true
+
+    state.background_layer.not_nil!.offset_x.should eq(18.0)
+    state.terrain_layer.not_nil!.fill_count.should eq(2)
+    state.terrain_layer.not_nil!.fill_at(0, 0).should be_nil
+    state.text_layer.not_nil!.objects.first.text.should eq("Depot")
+    state.asset_layer.not_nil!.objects.first.scale.should eq(original_asset_scale)
+    state.fill_radius.should eq(2)
+    state.show_grid.should be_false
+    state.show_coordinates.should be_false
+    state.show_assets.should be_false
+    state.active_tool.should eq("Asset")
+  end
 end
