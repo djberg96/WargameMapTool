@@ -1,4 +1,5 @@
 require "./spec_helper"
+require "../src/wargame_map_tool_crystal/map_canvas"
 
 describe WargameMapToolCrystal::MapState do
   it "loads a canonical hexmap fixture for supported layer types" do
@@ -276,6 +277,47 @@ describe WargameMapToolCrystal::MapState do
     snapped_corner = state.snap_sketch_world_point(Qt6::PointF.new(corner.x + 2.0, corner.y + 1.0))
     snapped_corner.x.should eq(corner.x)
     snapped_corner.y.should eq(corner.y)
+  end
+end
+
+describe WargameMapToolCrystal::MapCanvas do
+  it "snaps selected sketch moves to the grid in select mode" do
+    application = app
+    state = WargameMapToolCrystal::MapState.new
+    status_messages = [] of String
+    hover_messages = [] of String
+    canvas = WargameMapToolCrystal::MapCanvas.new(
+      state,
+      ->(message : String) { status_messages << message },
+      ->(message : String) { hover_messages << message }
+    )
+    canvas.widget.resize(860, 620)
+    canvas.widget.show
+    application.process_events
+
+    state.active_tool = "Sketch"
+    state.sketch_snap_to_grid = true
+    object = state.create_sketch_rectangle(
+      Qt6::PointF.new(40.0, 40.0),
+      Qt6::PointF.new(80.0, 80.0)
+    )
+    object.should_not be_nil
+    target_center = state.hex_center(5, 5)
+
+    start_center = object.not_nil!.center
+    start_screen = state.screen_point(Qt6::PointF.new(start_center[0], start_center[1]))
+    drag_screen = state.screen_point(Qt6::PointF.new(target_center.x + 3.0, target_center.y - 2.0))
+
+    canvas.widget.simulate_mouse_press(start_screen)
+    canvas.widget.simulate_mouse_move(drag_screen, buttons: 1)
+    canvas.widget.simulate_mouse_release(drag_screen)
+    5.times { application.process_events }
+
+    moved_center = object.not_nil!.center
+    moved_center[0].should eq(target_center.x)
+    moved_center[1].should eq(target_center.y)
+    status_messages.last?.should eq("Moved sketch rect")
+    application.should_not be_nil
   end
 end
 

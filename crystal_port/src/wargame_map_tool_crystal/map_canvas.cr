@@ -39,6 +39,9 @@ module WargameMapToolCrystal
     @sketch_resize_ry : Float64
     @sketch_rotate_initial : Float64
     @sketch_rotate_initial_angle : Float64
+    @sketch_move_points : Array(Tuple(Float64, Float64))
+    @sketch_move_center : Tuple(Float64, Float64)?
+    @sketch_move_pointer_offset : Tuple(Float64, Float64)?
 
     getter widget : Qt6::EventWidget
 
@@ -73,6 +76,9 @@ module WargameMapToolCrystal
       @sketch_resize_ry = 0.0
       @sketch_rotate_initial = 0.0
       @sketch_rotate_initial_angle = 0.0
+      @sketch_move_points = [] of Tuple(Float64, Float64)
+      @sketch_move_center = nil
+      @sketch_move_pointer_offset = nil
       @drag_moved = false
       wire_events
     end
@@ -107,6 +113,9 @@ module WargameMapToolCrystal
         @sketch_preview_start = nil
         @sketch_preview_end = nil
         @sketch_resize_anchor = nil
+        @sketch_move_points.clear
+        @sketch_move_center = nil
+        @sketch_move_pointer_offset = nil
         @drag_moved = false
 
         handled_press = false
@@ -188,17 +197,14 @@ module WargameMapToolCrystal
           if event.button == 1
             selected = @state.selected_sketch_object if @state.selected_sketch_present?
             hovered = @state.hovered_sketch_object
+            hovered ||= @state.sketch_layer.try(&.nearest_object(event.position, @state))
             if selected && start_sketch_handle_interaction(event.position, selected)
               handled_press = true
             elsif selected && hovered == selected
-              @drag_sketch_object = selected
-              @drag_mode = "sketch_move"
-              handled_press = true
+              handled_press = begin_sketch_move_interaction(selected, event.position)
             elsif hovered
               @state.selected_sketch_object = hovered
-              @drag_sketch_object = hovered
-              @drag_mode = "sketch_move"
-              handled_press = true
+              handled_press = begin_sketch_move_interaction(hovered, event.position)
               refresh
             else
               world = snapped_sketch_world_point(@state.screen_to_world(event.position), @state.sketch_shape_type != "freehand")
@@ -312,15 +318,11 @@ module WargameMapToolCrystal
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
             elsif @drag_mode == "sketch_move" && (sketch_object = @drag_sketch_object)
-              previous_world = @state.screen_to_world(@state.last_pointer)
               current_world = @state.screen_to_world(event.position)
-              sketch_object.translate(
-                current_world.x.to_f64 - previous_world.x.to_f64,
-                current_world.y.to_f64 - previous_world.y.to_f64,
-              )
+              apply_sketch_move(sketch_object, current_world)
             elsif @drag_mode == "sketch_resize" && (sketch_object = @drag_sketch_object)
               if anchor = @sketch_resize_anchor
-                current_world = @state.screen_to_world(event.position)
+                current_world = snapped_selected_sketch_world_point(@state.screen_to_world(event.position))
                 sketch_object.resize_from_anchor(
                   anchor,
                   {current_world.x.to_f64, current_world.y.to_f64},
@@ -605,6 +607,9 @@ module WargameMapToolCrystal
           @sketch_resize_ry = 0.0
           @sketch_rotate_initial = 0.0
           @sketch_rotate_initial_angle = 0.0
+          @sketch_move_points.clear
+          @sketch_move_center = nil
+          @sketch_move_pointer_offset = nil
           @drag_moved = false
         end
       end
@@ -957,6 +962,44 @@ module WargameMapToolCrystal
       return world unless allow_snap && @state.sketch_snap_to_grid
 
       @state.snap_sketch_world_point(world)
+    end
+
+    private def snapped_selected_sketch_world_point(world : Qt6::PointF) : Qt6::PointF
+      return world unless @state.sketch_snap_to_grid
+
+      @state.snap_sketch_world_point(world)
+    end
+
+    private def begin_sketch_move_interaction(object : SketchObject, position : Qt6::PointF) : Bool
+      @drag_sketch_object = object
+      @drag_mode = "sketch_move"
+      @sketch_move_points = object.points.map { |point| {point[0], point[1]} }
+      center_x, center_y = object.center
+      current_world = @state.screen_to_world(position)
+      @sketch_move_center = {center_x, center_y}
+      @sketch_move_pointer_offset = {
+        current_world.x.to_f64 - center_x,
+        current_world.y.to_f64 - center_y,
+      }
+      true
+    end
+
+    private def apply_sketch_move(sketch_object : SketchObject, current_world : Qt6::PointF) : Nil
+      return unless original_center = @sketch_move_center
+      return unless pointer_offset = @sketch_move_pointer_offset
+      return if @sketch_move_points.empty?
+
+      desired_center = Qt6::PointF.new(
+        current_world.x - pointer_offset[0],
+        current_world.y - pointer_offset[1]
+      )
+      snapped_center = snapped_selected_sketch_world_point(desired_center)
+      delta_x = snapped_center.x.to_f64 - original_center[0]
+      delta_y = snapped_center.y.to_f64 - original_center[1]
+
+      sketch_object.points = @sketch_move_points.map do |point|
+        {point[0] + delta_x, point[1] + delta_y}
+      end
     end
 
     private def start_sketch_handle_interaction(position : Qt6::PointF, object : SketchObject) : Bool

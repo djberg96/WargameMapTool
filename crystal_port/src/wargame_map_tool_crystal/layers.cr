@@ -1318,7 +1318,7 @@ module WargameMapToolCrystal
       path = transformed_path
       return false if path.empty?
 
-      if @fill_enabled && @shape_type != "line" && path.contains(point)
+      if @shape_type != "line" && path.contains(point)
         return true
       end
 
