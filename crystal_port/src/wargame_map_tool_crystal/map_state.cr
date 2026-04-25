@@ -27,6 +27,7 @@ module WargameMapToolCrystal
     property fill_radius : Int32
     property sketch_freehand_closed : Bool
     property sketch_perfect_circle : Bool
+    property sketch_clipboard_object : SketchObject?
     property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_border_object : BorderObject?
     property selected_hexside_object : HexsideObject?
@@ -64,6 +65,7 @@ module WargameMapToolCrystal
       @sketch_polygon_sides = 6
       @sketch_freehand_closed = false
       @sketch_perfect_circle = false
+      @sketch_clipboard_object = nil
       @pending_path_anchor = nil
       @selected_border_object = nil
       @selected_hexside_object = nil
@@ -100,6 +102,7 @@ module WargameMapToolCrystal
       @sketch_polygon_sides = 6
       @sketch_freehand_closed = false
       @sketch_perfect_circle = false
+      @sketch_clipboard_object = nil
       @pending_path_anchor = nil
       @selected_border_object = nil
       @selected_hexside_object = nil
@@ -522,6 +525,22 @@ module WargameMapToolCrystal
       object = build_sketch_drag_object(layer, "rect", start_point, end_point)
       return nil unless object
 
+      finalize_new_sketch(layer, object)
+    end
+
+    def copy_selected_sketch : SketchObject?
+      source = @selected_sketch_object
+      return nil unless selected_sketch_present? && source
+
+      @sketch_clipboard_object = clone_sketch_object(source)
+    end
+
+    def paste_sketch_from_clipboard : SketchObject?
+      source = @sketch_clipboard_object
+      layer = sketch_layer
+      return nil unless source && layer
+
+      object = clone_sketch_object(source, 10.0, 10.0)
       finalize_new_sketch(layer, object)
     end
 
@@ -2631,6 +2650,42 @@ module WargameMapToolCrystal
       @pending_path_anchor = nil
       @selected_sketch_object = object
       object
+    end
+
+    private def clone_sketch_object(source : SketchObject, delta_x : Float64 = 0.0, delta_y : Float64 = 0.0) : SketchObject
+      SketchObject.new(
+        id: next_sketch_id,
+        shape_type: source.shape_type,
+        points: source.points.map { |point| {point[0] + delta_x, point[1] + delta_y} },
+        radius: source.radius,
+        num_sides: source.num_sides,
+        rx: source.rx,
+        ry: source.ry,
+        closed: source.closed,
+        stroke_color: source.stroke_color,
+        stroke_width: source.stroke_width,
+        stroke_type: source.stroke_type,
+        dash_length: source.dash_length,
+        gap_length: source.gap_length,
+        stroke_cap: source.stroke_cap,
+        fill_enabled: source.fill_enabled,
+        fill_color: source.fill_color,
+        fill_opacity: source.fill_opacity,
+        fill_type: source.fill_type,
+        fill_texture_id: source.fill_texture_id,
+        fill_texture_zoom: source.fill_texture_zoom,
+        fill_texture_rotation: source.fill_texture_rotation,
+        rotation: source.rotation,
+        shadow_enabled: source.shadow_enabled,
+        shadow_type: source.shadow_type,
+        shadow_color: source.shadow_color,
+        shadow_opacity: source.shadow_opacity,
+        shadow_angle: source.shadow_angle,
+        shadow_distance: source.shadow_distance,
+        shadow_spread: source.shadow_spread,
+        shadow_size: source.shadow_size,
+        draw_over_grid: source.draw_over_grid,
+      )
     end
 
     private def next_sketch_id : String

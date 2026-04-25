@@ -8,6 +8,10 @@ module WargameMapToolCrystal
     SKETCH_HANDLE_SIZE          = 6.0
     SKETCH_HANDLE_HIT_RADIUS    = 10.0
     SKETCH_ROTATE_HANDLE_OFFSET = 26.0
+    KEY_C                       = 67
+    KEY_V                       = 86
+    CONTROL_MODIFIER            = 0x04000000
+    META_MODIFIER               = 0x10000000
 
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
@@ -622,6 +626,24 @@ module WargameMapToolCrystal
       end
 
       @widget.on_key_press do |event|
+        command_pressed = (event.modifiers & CONTROL_MODIFIER) != 0 || (event.modifiers & META_MODIFIER) != 0
+
+        if command_pressed && event.key == KEY_C && @state.active_tool == "Sketch"
+          if object = @state.copy_selected_sketch
+            refresh("Copied sketch #{object.shape_type}")
+          else
+            refresh("Select a sketch to copy")
+          end
+          next
+        elsif command_pressed && event.key == KEY_V && @state.active_tool == "Sketch"
+          if object = @state.paste_sketch_from_clipboard
+            refresh("Pasted sketch #{object.shape_type}")
+          else
+            refresh("Copy a sketch before pasting")
+          end
+          next
+        end
+
         case event.key
         when 43, 61
           center = Qt6::PointF.new(@widget.size.width / 2.0, @widget.size.height / 2.0)

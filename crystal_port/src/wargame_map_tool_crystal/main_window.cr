@@ -562,6 +562,38 @@ module WargameMapToolCrystal
         end
       end
 
+      copy_sketch_action = Qt6::Action.new("Copy Selected Sketch", @widget)
+      copy_sketch_action.on_triggered do
+        unless @state.selected_sketch_present?
+          handle_status("Select a sketch to copy")
+          next
+        end
+
+        if object = @state.copy_selected_sketch
+          handle_status("Copied sketch #{object.shape_type}")
+        else
+          handle_status("Sketch copy failed")
+        end
+      end
+
+      paste_sketch_action = Qt6::Action.new("Paste Sketch", @widget)
+      paste_sketch_action.on_triggered do
+        unless @state.sketch_clipboard_object
+          handle_status("Copy a sketch before pasting")
+          next
+        end
+
+        if object = @state.paste_sketch_from_clipboard
+          if index = @state.sketch_layer_index
+            @state.set_active_layer(index)
+            @layer_tree.current_index = @layer_model.index(index, 0)
+          end
+          refresh_all("Pasted sketch #{object.shape_type}")
+        else
+          handle_status("Sketch paste failed")
+        end
+      end
+
       delete_path_action = Qt6::Action.new("Delete Selected Path…", @widget)
       delete_path_action.on_triggered do
         object = @state.selected_path_object if @state.selected_path_present?
@@ -878,6 +910,8 @@ module WargameMapToolCrystal
       edit_menu << edit_text_action
       edit_menu << delete_text_action
       edit_menu << duplicate_path_action
+      edit_menu << copy_sketch_action
+      edit_menu << paste_sketch_action
       edit_menu << delete_path_action
       edit_menu << delete_freeform_path_action
       edit_menu << delete_sketch_action
@@ -1993,7 +2027,7 @@ module WargameMapToolCrystal
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_sketch_object if @state.selected_sketch_present?)
-                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag a corner handle to resize it, drag the green handle to rotate it, #{sketch_creation_help_text}, press Delete/right-click to remove it, or edit stroke, fill, rotation, and draw-over-grid settings in the inspector."
+                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag a corner handle to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, #{sketch_creation_help_text}, press Delete/right-click to remove it, or edit stroke, fill, rotation, and draw-over-grid settings in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
@@ -2003,7 +2037,7 @@ module WargameMapToolCrystal
                              elsif @state.active_tool == "Freeform" && (freeform_layer = @state.freeform_path_layer)
                                "Freeform tool active at #{@state.zoom.round(2)}x. Left-drag draws a new freeform path in world space, click an existing stroke to select it, right-click removes the hovered stroke, and #{freeform_layer.path_count} freeform paths are currently in the slice."
                              elsif @state.active_tool == "Sketch" && (sketch_layer = @state.sketch_layer)
-                               "Sketch tool active at #{@state.zoom.round(2)}x with #{@state.sketch_shape_label.downcase} mode. #{sketch_creation_help_text.capitalize}, click an existing sketch to select it, drag the selected sketch to move it, drag its corner handles to resize it, drag the green handle to rotate it, and right-click/Delete removes the hovered or selected sketch. The inspector now controls new-shape mode plus selected-sketch styling. #{sketch_layer.sketch_count} sketches are currently in the slice."
+                               "Sketch tool active at #{@state.zoom.round(2)}x with #{@state.sketch_shape_label.downcase} mode. #{sketch_creation_help_text.capitalize}, click an existing sketch to select it, drag the selected sketch to move it, drag its corner handles to resize it, drag the green handle to rotate it, use Copy/Paste or #{platform_copy_shortcut}/#{platform_paste_shortcut} to duplicate it, and right-click/Delete removes the hovered or selected sketch. The inspector now controls new-shape mode plus selected-sketch styling. #{sketch_layer.sketch_count} sketches are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else
@@ -2039,6 +2073,14 @@ module WargameMapToolCrystal
       else
         "drag on empty space to create a rectangle"
       end
+    end
+
+    private def platform_copy_shortcut : String
+      "Cmd+C"
+    end
+
+    private def platform_paste_shortcut : String
+      "Cmd+V"
     end
 
     private def reset_history_tracking : Nil

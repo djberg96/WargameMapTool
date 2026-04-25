@@ -235,6 +235,34 @@ describe WargameMapToolCrystal::MapState do
     state.sketch_layer.not_nil!.sketch_count.should eq(4)
     state.selected_sketch_object.should eq(freehand)
   end
+
+  it "copies and pastes sketches through the sketch clipboard" do
+    state = WargameMapToolCrystal::MapState.new
+
+    state.sketch_shape_type = "ellipse"
+    original = state.create_sketch_from_drag(Qt6::PointF.new(20.0, 30.0), Qt6::PointF.new(60.0, 70.0))
+    original.should_not be_nil
+    original.not_nil!.fill_enabled = true
+    original.not_nil!.rotation = 12.0
+
+    copied = state.copy_selected_sketch
+    copied.should_not be_nil
+    copied.not_nil!.id.should_not eq(original.not_nil!.id)
+    copied.not_nil!.shape_type.should eq("ellipse")
+
+    pasted = state.paste_sketch_from_clipboard
+    pasted.should_not be_nil
+    pasted.not_nil!.id.should_not eq(original.not_nil!.id)
+    pasted.not_nil!.shape_type.should eq("ellipse")
+    pasted.not_nil!.fill_enabled.should be_true
+    pasted.not_nil!.rotation.should eq(12.0)
+    pasted.not_nil!.points.first.should eq({original.not_nil!.points.first[0] + 10.0, original.not_nil!.points.first[1] + 10.0})
+    pasted.not_nil!.rx.should eq(original.not_nil!.rx)
+    pasted.not_nil!.ry.should eq(original.not_nil!.ry)
+
+    state.sketch_layer.not_nil!.sketch_count.should eq(2)
+    state.selected_sketch_object.should eq(pasted)
+  end
 end
 
 describe WargameMapToolCrystal::SketchObject do
