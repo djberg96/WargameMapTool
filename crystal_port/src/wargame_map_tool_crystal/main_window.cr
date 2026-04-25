@@ -94,6 +94,7 @@ module WargameMapToolCrystal
     @hexside_label : Qt6::Label
     @path_label : Qt6::Label
     @freeform_path_label : Qt6::Label
+    @sketch_label : Qt6::Label
     @asset_label : Qt6::Label
     @asset_path_label : Qt6::Label
     @hover_label : Qt6::Label
@@ -112,6 +113,14 @@ module WargameMapToolCrystal
     @freeform_path_width_spin : Qt6::DoubleSpinBox
     @freeform_path_color_button : Qt6::PushButton
     @freeform_path_opacity_spin : Qt6::DoubleSpinBox
+    @sketch_stroke_width_spin : Qt6::DoubleSpinBox
+    @sketch_stroke_type_combo : Qt6::ComboBox
+    @sketch_stroke_color_button : Qt6::PushButton
+    @sketch_fill_check : Qt6::CheckBox
+    @sketch_fill_color_button : Qt6::PushButton
+    @sketch_fill_opacity_spin : Qt6::DoubleSpinBox
+    @sketch_rotation_spin : Qt6::DoubleSpinBox
+    @sketch_draw_over_grid_check : Qt6::CheckBox
     @asset_snap_check : Qt6::CheckBox
     @asset_scale_spin : Qt6::DoubleSpinBox
     @asset_rotation_spin : Qt6::DoubleSpinBox
@@ -163,6 +172,7 @@ module WargameMapToolCrystal
       @hexside_label = Qt6::Label.new
       @path_label = Qt6::Label.new
       @freeform_path_label = Qt6::Label.new
+      @sketch_label = Qt6::Label.new
       @asset_label = Qt6::Label.new
       @asset_path_label = Qt6::Label.new
       @hover_label = Qt6::Label.new
@@ -181,6 +191,14 @@ module WargameMapToolCrystal
       @freeform_path_width_spin = Qt6::DoubleSpinBox.new
       @freeform_path_color_button = Qt6::PushButton.new("Freeform Color")
       @freeform_path_opacity_spin = Qt6::DoubleSpinBox.new
+      @sketch_stroke_width_spin = Qt6::DoubleSpinBox.new
+      @sketch_stroke_type_combo = Qt6::ComboBox.new
+      @sketch_stroke_color_button = Qt6::PushButton.new("Sketch Stroke")
+      @sketch_fill_check = Qt6::CheckBox.new("Enable Fill")
+      @sketch_fill_color_button = Qt6::PushButton.new("Sketch Fill")
+      @sketch_fill_opacity_spin = Qt6::DoubleSpinBox.new
+      @sketch_rotation_spin = Qt6::DoubleSpinBox.new
+      @sketch_draw_over_grid_check = Qt6::CheckBox.new("Draw Over Grid")
       @asset_snap_check = Qt6::CheckBox.new("Snap To Hex")
       @asset_scale_spin = Qt6::DoubleSpinBox.new
       @asset_rotation_spin = Qt6::DoubleSpinBox.new
@@ -643,6 +661,32 @@ module WargameMapToolCrystal
         end
       end
 
+      delete_sketch_action = Qt6::Action.new("Delete Selected Sketch…", @widget)
+      delete_sketch_action.on_triggered do
+        object = @state.selected_sketch_object if @state.selected_sketch_present?
+        unless object
+          handle_status("Select a sketch to delete it")
+          next
+        end
+
+        result = Qt6::MessageBox.question(
+          @widget,
+          title: "Delete Sketch",
+          text: "Delete selected #{object.shape_type} sketch?",
+          informative_text: "This removes the selected sketch object from the Crystal slice.",
+          buttons: Qt6::MessageBoxButton::Yes | Qt6::MessageBoxButton::No
+        )
+
+        if result == Qt6::MessageBoxButton::Yes && (layer = @state.sketch_layer) && layer.remove_object(object)
+          @state.clear_sketch_selection
+          refresh_all("Deleted sketch #{object.shape_type}")
+        elsif result == Qt6::MessageBoxButton::No
+          handle_status("Delete canceled")
+        else
+          handle_status("Sketch delete failed")
+        end
+      end
+
       clear_fills_action = Qt6::Action.new("Clear All Fills…", @widget)
       clear_fills_action.on_triggered do
         layer = @state.terrain_layer
@@ -828,6 +872,7 @@ module WargameMapToolCrystal
       edit_menu << duplicate_path_action
       edit_menu << delete_path_action
       edit_menu << delete_freeform_path_action
+      edit_menu << delete_sketch_action
       edit_menu << delete_border_action
       edit_menu << delete_hexside_action
       edit_menu << clear_fills_action
@@ -886,6 +931,10 @@ module WargameMapToolCrystal
             end
           elsif tool_name == "Freeform"
             if index = @state.freeform_path_layer_index
+              @state.set_active_layer(index)
+            end
+          elsif tool_name == "Sketch"
+            if index = @state.sketch_layer_index
               @state.set_active_layer(index)
             end
           end
@@ -1176,6 +1225,100 @@ module WargameMapToolCrystal
         @canvas.refresh("Updated freeform path opacity")
       end
 
+      @sketch_stroke_width_spin.set_range(1.0, 12.0)
+      @sketch_stroke_width_spin.decimals = 1
+      @sketch_stroke_width_spin.single_step = 0.5
+      @sketch_stroke_width_spin.suffix = " px"
+      @sketch_stroke_width_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.stroke_width = value
+        @canvas.refresh("Updated sketch stroke width")
+      end
+
+      @sketch_stroke_type_combo << "Solid"
+      @sketch_stroke_type_combo << "Dashed"
+      @sketch_stroke_type_combo << "Dotted"
+      @sketch_stroke_type_combo.on_current_index_changed do |index|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.stroke_type = case index
+                             when 1
+                               "dashed"
+                             when 2
+                               "dotted"
+                             else
+                               "solid"
+                             end
+        @canvas.refresh("Updated sketch stroke style")
+      end
+
+      @sketch_stroke_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.stroke_color, title: "Select Sketch Stroke Color")
+        next unless color
+
+        object.stroke_color = color
+        @sketch_stroke_color_button.text = color_button_text("Sketch Stroke", color)
+        @canvas.refresh("Updated sketch stroke color")
+      end
+
+      @sketch_fill_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.fill_enabled = checked
+        refresh_inspector
+        @canvas.refresh(checked ? "Sketch fill enabled" : "Sketch fill disabled")
+      end
+
+      @sketch_fill_color_button.on_clicked do
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        color = Qt6::ColorDialog.get_color(@widget, object.fill_color, title: "Select Sketch Fill Color")
+        next unless color
+
+        object.fill_color = color
+        @sketch_fill_color_button.text = color_button_text("Sketch Fill", color)
+        @canvas.refresh("Updated sketch fill color")
+      end
+
+      @sketch_fill_opacity_spin.set_range(0.0, 1.0)
+      @sketch_fill_opacity_spin.decimals = 2
+      @sketch_fill_opacity_spin.single_step = 0.05
+      @sketch_fill_opacity_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.fill_opacity = value
+        @canvas.refresh("Updated sketch fill opacity")
+      end
+
+      @sketch_rotation_spin.set_range(-180.0, 180.0)
+      @sketch_rotation_spin.decimals = 1
+      @sketch_rotation_spin.single_step = 5.0
+      @sketch_rotation_spin.suffix = " deg"
+      @sketch_rotation_spin.on_value_changed do |value|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.rotation = value
+        @canvas.refresh("Updated sketch rotation")
+      end
+
+      @sketch_draw_over_grid_check.on_toggled do |checked|
+        next if @updating_panel
+        next unless object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+
+        object.draw_over_grid = checked
+        @canvas.refresh(checked ? "Sketch moved over grid" : "Sketch moved under grid")
+      end
+
       @asset_scale_spin.set_range(0.1, 4.0)
       @asset_scale_spin.decimals = 2
       @asset_scale_spin.single_step = 0.05
@@ -1371,6 +1514,23 @@ module WargameMapToolCrystal
         column << Qt6::Label.new("Opacity")
         column << @freeform_path_opacity_spin
       end
+      sketch_controls = Qt6::Widget.new
+      sketch_controls.vbox do |column|
+        column << Qt6::Label.new("Selected Sketch")
+        column << @sketch_label
+        column << Qt6::Label.new("Stroke Width")
+        column << @sketch_stroke_width_spin
+        column << Qt6::Label.new("Stroke Style")
+        column << @sketch_stroke_type_combo
+        column << @sketch_stroke_color_button
+        column << @sketch_fill_check
+        column << @sketch_fill_color_button
+        column << Qt6::Label.new("Fill Opacity")
+        column << @sketch_fill_opacity_spin
+        column << Qt6::Label.new("Rotation")
+        column << @sketch_rotation_spin
+        column << @sketch_draw_over_grid_check
+      end
       asset_controls = Qt6::Widget.new
       asset_controls.vbox do |column|
         column << Qt6::Label.new("Selected Asset")
@@ -1416,6 +1576,7 @@ module WargameMapToolCrystal
         column << hexside_controls
         column << path_controls
         column << freeform_path_controls
+        column << sketch_controls
         column << asset_controls
         column << text_controls
         column << @active_tool_label
@@ -1579,6 +1740,50 @@ module WargameMapToolCrystal
         @freeform_path_color_button.enabled = false
         @freeform_path_opacity_spin.enabled = false
       end
+      if object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+        @sketch_label.text = "Sketch: #{object.shape_type} (#{object.points.size} pts)"
+        @sketch_stroke_width_spin.value = object.stroke_width
+        @sketch_stroke_type_combo.current_index = case object.stroke_type
+                                                  when "dashed"
+                                                    1
+                                                  when "dotted"
+                                                    2
+                                                  else
+                                                    0
+                                                  end
+        @sketch_stroke_color_button.text = color_button_text("Sketch Stroke", object.stroke_color)
+        @sketch_fill_check.checked = object.fill_enabled
+        @sketch_fill_color_button.text = color_button_text("Sketch Fill", object.fill_color)
+        @sketch_fill_opacity_spin.value = object.fill_opacity
+        @sketch_rotation_spin.value = object.rotation
+        @sketch_draw_over_grid_check.checked = object.draw_over_grid
+        @sketch_stroke_width_spin.enabled = true
+        @sketch_stroke_type_combo.enabled = true
+        @sketch_stroke_color_button.enabled = true
+        @sketch_fill_check.enabled = true
+        @sketch_fill_color_button.enabled = object.fill_enabled
+        @sketch_fill_opacity_spin.enabled = object.fill_enabled
+        @sketch_rotation_spin.enabled = true
+        @sketch_draw_over_grid_check.enabled = true
+      else
+        @sketch_label.text = "Sketch: none selected"
+        @sketch_stroke_width_spin.value = 2.0
+        @sketch_stroke_type_combo.current_index = 0
+        @sketch_stroke_color_button.text = "Sketch Stroke"
+        @sketch_fill_check.checked = false
+        @sketch_fill_color_button.text = "Sketch Fill"
+        @sketch_fill_opacity_spin.value = 0.3
+        @sketch_rotation_spin.value = 0.0
+        @sketch_draw_over_grid_check.checked = false
+        @sketch_stroke_width_spin.enabled = false
+        @sketch_stroke_type_combo.enabled = false
+        @sketch_stroke_color_button.enabled = false
+        @sketch_fill_check.enabled = false
+        @sketch_fill_color_button.enabled = false
+        @sketch_fill_opacity_spin.enabled = false
+        @sketch_rotation_spin.enabled = false
+        @sketch_draw_over_grid_check.enabled = false
+      end
       if object = (@state.selected_asset_object if @state.selected_asset_present?)
         @asset_label.text = if path = object.image_path
                               "Asset: #{File.basename(path)}"
@@ -1688,6 +1893,8 @@ module WargameMapToolCrystal
                                "Selected hexside: #{@state.hex_label(object.col_a, object.row_a)} -> #{@state.hex_label(object.col_b, object.row_b)} at #{@state.zoom.round(2)}x. Click the same edge with the Hexside tool to reselect it, right-click/Delete/Edit-menu removal all work, and the inspector edits width, color, and opacity."
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
+                             elsif object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag on empty space to create a rectangle, press Delete/right-click to remove it, or edit stroke, fill, rotation, and draw-over-grid settings in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
@@ -1696,6 +1903,8 @@ module WargameMapToolCrystal
                                "Hexside tool active at #{@state.zoom.round(2)}x. Left-click a hovered edge to place or select a hexside, right-click removes the hovered hexside, and #{hexside_layer.hexside_count} hexsides are currently in the slice."
                              elsif @state.active_tool == "Freeform" && (freeform_layer = @state.freeform_path_layer)
                                "Freeform tool active at #{@state.zoom.round(2)}x. Left-drag draws a new freeform path in world space, click an existing stroke to select it, right-click removes the hovered stroke, and #{freeform_layer.path_count} freeform paths are currently in the slice."
+                             elsif @state.active_tool == "Sketch" && (sketch_layer = @state.sketch_layer)
+                               "Sketch tool active at #{@state.zoom.round(2)}x. Drag on empty space to create a rectangle, click an existing sketch to select it, drag the selected sketch to move it, and right-click/Delete removes the hovered or selected sketch. The inspector edits stroke, fill, rotation, and render-order settings. #{sketch_layer.sketch_count} sketches are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else

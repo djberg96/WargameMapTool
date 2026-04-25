@@ -1154,6 +1154,489 @@ module WargameMapToolCrystal
     end
   end
 
+  class SketchObject
+    property id : String
+    property shape_type : String
+    property points : Array(Tuple(Float64, Float64))
+    property radius : Float64
+    property num_sides : Int32
+    property rx : Float64
+    property ry : Float64
+    property closed : Bool
+    property stroke_color : Qt6::Color
+    property stroke_width : Float64
+    property stroke_type : String
+    property dash_length : Float64
+    property gap_length : Float64
+    property stroke_cap : String
+    property fill_enabled : Bool
+    property fill_color : Qt6::Color
+    property fill_opacity : Float64
+    property fill_type : String
+    property fill_texture_id : String
+    property fill_texture_zoom : Float64
+    property fill_texture_rotation : Float64
+    property rotation : Float64
+    property shadow_enabled : Bool
+    property shadow_type : String
+    property shadow_color : Qt6::Color
+    property shadow_opacity : Float64
+    property shadow_angle : Float64
+    property shadow_distance : Float64
+    property shadow_spread : Float64
+    property shadow_size : Float64
+    property draw_over_grid : Bool
+
+    def initialize(
+      @id : String = "",
+      @shape_type : String = "rect",
+      points : Array(Tuple(Float64, Float64)) = [] of Tuple(Float64, Float64),
+      @radius : Float64 = 30.0,
+      @num_sides : Int32 = 6,
+      @rx : Float64 = 40.0,
+      @ry : Float64 = 30.0,
+      @closed : Bool = false,
+      @stroke_color : Qt6::Color = Qt6::Color.new(0, 0, 0),
+      @stroke_width : Float64 = 2.0,
+      @stroke_type : String = "solid",
+      @dash_length : Float64 = 8.0,
+      @gap_length : Float64 = 4.0,
+      @stroke_cap : String = "round",
+      @fill_enabled : Bool = false,
+      @fill_color : Qt6::Color = Qt6::Color.new(255, 255, 0),
+      @fill_opacity : Float64 = 0.3,
+      @fill_type : String = "color",
+      @fill_texture_id : String = "",
+      @fill_texture_zoom : Float64 = 1.0,
+      @fill_texture_rotation : Float64 = 0.0,
+      @rotation : Float64 = 0.0,
+      @shadow_enabled : Bool = false,
+      @shadow_type : String = "outer",
+      @shadow_color : Qt6::Color = Qt6::Color.new(0, 0, 0),
+      @shadow_opacity : Float64 = 0.5,
+      @shadow_angle : Float64 = 120.0,
+      @shadow_distance : Float64 = 5.0,
+      @shadow_spread : Float64 = 0.0,
+      @shadow_size : Float64 = 5.0,
+      @draw_over_grid : Bool = false,
+    )
+      @points = points.map { |point| {point[0].to_f64, point[1].to_f64} }
+    end
+
+    def center : Tuple(Float64, Float64)
+      if @shape_type == "polygon" || @shape_type == "ellipse"
+        return @points.first? || {0.0, 0.0}
+      end
+      return {0.0, 0.0} if @points.empty?
+
+      x_sum = 0.0
+      y_sum = 0.0
+      @points.each do |point|
+        x_sum += point[0]
+        y_sum += point[1]
+      end
+      {x_sum / @points.size, y_sum / @points.size}
+    end
+
+    def build_path : Qt6::QPainterPath
+      path = Qt6::QPainterPath.new
+
+      case @shape_type
+      when "line"
+        return path if @points.size < 2
+        path.move_to(pointf(@points[0]))
+        path.line_to(pointf(@points[1]))
+      when "rect"
+        return path if @points.size < 2
+        x1 = @points[0][0]
+        y1 = @points[0][1]
+        x2 = @points[1][0]
+        y2 = @points[1][1]
+        path.add_rect(Qt6::RectF.new(
+          {x1, x2}.min,
+          {y1, y2}.min,
+          (x2 - x1).abs,
+          (y2 - y1).abs,
+        ))
+      when "polygon"
+        return path if @points.empty?
+        center = @points[0]
+        polygon = Qt6::QPolygonF.new(build_polygon_points(center[0], center[1]))
+        path.add_polygon(polygon)
+        path.close_subpath
+      when "ellipse"
+        return path if @points.empty?
+        center = @points[0]
+        path.add_ellipse(Qt6::RectF.new(
+          center[0] - @rx,
+          center[1] - @ry,
+          @rx * 2.0,
+          @ry * 2.0,
+        ))
+      when "freehand"
+        return path if @points.size < 2
+        path.move_to(pointf(@points[0]))
+        @points.each_with_index do |point, index|
+          next if index == 0
+          path.line_to(pointf(point))
+        end
+        path.close_subpath if @closed && @points.size >= 3
+      else
+        return path
+      end
+
+      path
+    end
+
+    def transformed_path : Qt6::QPainterPath
+      path = build_path
+      return path if path.empty? || @rotation == 0.0
+
+      transform = Qt6::QTransform.new
+      center_x, center_y = center
+      transform.translate(center_x, center_y)
+      transform.rotate(@rotation)
+      transform.translate(-center_x, -center_y)
+      transform.map(path)
+    end
+
+    def bounding_rect : Qt6::RectF
+      path = transformed_path
+      return Qt6::RectF.new(0.0, 0.0, 0.0, 0.0) if path.empty?
+
+      rect = path.bounding_rect
+      margin = @stroke_width / 2.0 + 2.0
+      Qt6::RectF.new(
+        rect.x - margin,
+        rect.y - margin,
+        rect.width + margin * 2.0,
+        rect.height + margin * 2.0,
+      )
+    end
+
+    def contains_point(point : Qt6::PointF, threshold : Float64 = 8.0) : Bool
+      path = transformed_path
+      return false if path.empty?
+
+      if @fill_enabled && @shape_type != "line" && path.contains(point)
+        return true
+      end
+
+      stroker = Qt6::QPainterPathStroker.new
+      stroker.width = Math.max(@stroke_width, threshold * 2.0)
+      stroker.create_stroke(path).contains(point)
+    end
+
+    def translate(delta_x : Float64, delta_y : Float64) : Nil
+      @points.map! do |point|
+        {point[0] + delta_x, point[1] + delta_y}
+      end
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState, layer_opacity : Float64 = 1.0) : Nil
+      path = build_screen_path(state)
+      return if path.empty?
+
+      painter.save
+      if @fill_enabled && @shape_type != "line"
+        fill = Qt6::Color.new(
+          @fill_color.red,
+          @fill_color.green,
+          @fill_color.blue,
+          ((255.0 * @fill_opacity * layer_opacity).round.to_i).clamp(0, 255)
+        )
+        painter.pen = Qt6::QPen.new(Qt6::Color.new(0, 0, 0, 0), 0.0)
+        painter.brush = fill
+        painter.draw_path(path)
+      end
+
+      if @stroke_width > 0.0
+        painter.pen = build_pen(state)
+        painter.brush = Qt6::Color.new(0, 0, 0, 0)
+        painter.opacity = layer_opacity.clamp(0.0, 1.0)
+        painter.draw_path(path)
+      end
+      painter.restore
+    end
+
+    def draw_selection(painter : Qt6::QPainter, state : MapState, accent : Qt6::Color) : Nil
+      path = build_screen_path(state)
+      return if path.empty?
+
+      painter.save
+      selection_pen = Qt6::QPen.new(accent, [@stroke_width * state.zoom + 4.0, 2.0].max)
+      selection_pen.style = Qt6::PenStyle::DashLine
+      painter.pen = selection_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = 0.9
+      painter.draw_path(path)
+      painter.restore
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "id", @id unless @id.empty?
+        json.field "shape_type", @shape_type
+        json.field "points" do
+          json.array do
+            @points.each do |point|
+              json.array do
+                json.number point[0]
+                json.number point[1]
+              end
+            end
+          end
+        end
+        json.field "radius", @radius if @shape_type == "polygon"
+        json.field "num_sides", @num_sides if @shape_type == "polygon"
+        json.field "rx", @rx if @shape_type == "ellipse"
+        json.field "ry", @ry if @shape_type == "ellipse"
+        json.field "closed", @closed if @shape_type == "freehand" && @closed
+        json.field "stroke_color", color_hex(@stroke_color)
+        json.field "stroke_width", @stroke_width
+        if @stroke_type != "solid"
+          json.field "stroke_type", @stroke_type
+          json.field "dash_length", @dash_length
+          json.field "gap_length", @gap_length
+        end
+        json.field "stroke_cap", @stroke_cap if @stroke_cap != "round"
+        if @fill_enabled
+          json.field "fill_enabled", true
+          json.field "fill_color", color_hex(@fill_color)
+          json.field "fill_opacity", @fill_opacity
+          json.field "fill_type", @fill_type if @fill_type != "color"
+          if @fill_type == "texture" && !@fill_texture_id.empty?
+            json.field "fill_texture_id", @fill_texture_id
+            json.field "fill_texture_zoom", @fill_texture_zoom
+            json.field "fill_texture_rotation", @fill_texture_rotation
+          end
+        end
+        json.field "rotation", @rotation if @rotation != 0.0
+        json.field "draw_over_grid", true if @draw_over_grid
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      points = [] of Tuple(Float64, Float64)
+      data["points"]?.try(&.as_a?).try do |items|
+        items.each do |item|
+          next unless values = item.as_a?
+          next unless values.size >= 2
+          x = values[0].as_f? || values[0].as_i?.try(&.to_f64) || 0.0
+          y = values[1].as_f? || values[1].as_i?.try(&.to_f64) || 0.0
+          points << {x, y}
+        end
+      end
+
+      new(
+        data["id"]?.try(&.as_s?) || "",
+        data["shape_type"]?.try(&.as_s?) || "rect",
+        points,
+        json_number(data["radius"]?) || 30.0,
+        (data["num_sides"]?.try(&.as_i?) || 6).to_i32,
+        json_number(data["rx"]?) || 40.0,
+        json_number(data["ry"]?) || 30.0,
+        data["closed"]?.try(&.as_bool?) || false,
+        color_from_any(data["stroke_color"]?, Qt6::Color.new(0, 0, 0)),
+        json_number(data["stroke_width"]?) || 2.0,
+        data["stroke_type"]?.try(&.as_s?) || "solid",
+        json_number(data["dash_length"]?) || 8.0,
+        json_number(data["gap_length"]?) || 4.0,
+        data["stroke_cap"]?.try(&.as_s?) || "round",
+        data["fill_enabled"]?.try(&.as_bool?) || false,
+        color_from_any(data["fill_color"]?, Qt6::Color.new(255, 255, 0)),
+        json_number(data["fill_opacity"]?) || 0.3,
+        data["fill_type"]?.try(&.as_s?) || "color",
+        data["fill_texture_id"]?.try(&.as_s?) || "",
+        json_number(data["fill_texture_zoom"]?) || 1.0,
+        json_number(data["fill_texture_rotation"]?) || 0.0,
+        json_number(data["rotation"]?) || 0.0,
+        data["shadow_enabled"]?.try(&.as_bool?) || false,
+        data["shadow_type"]?.try(&.as_s?) || "outer",
+        color_from_any(data["shadow_color"]?, Qt6::Color.new(0, 0, 0)),
+        json_number(data["shadow_opacity"]?) || 0.5,
+        json_number(data["shadow_angle"]?) || 120.0,
+        json_number(data["shadow_distance"]?) || 5.0,
+        json_number(data["shadow_spread"]?) || 0.0,
+        json_number(data["shadow_size"]?) || (json_number(data["shadow_blur_radius"]?) || 5.0),
+        data["draw_over_grid"]?.try(&.as_bool?) || false,
+      )
+    end
+
+    private def build_polygon_points(center_x : Float64, center_y : Float64) : Array(Qt6::PointF)
+      sides = Math.max(@num_sides, 3)
+      points = [] of Qt6::PointF
+      sides.times do |index|
+        angle = 2.0 * Math::PI * index / sides - Math::PI / 2.0
+        points << Qt6::PointF.new(
+          center_x + @radius * Math.cos(angle),
+          center_y + @radius * Math.sin(angle)
+        )
+      end
+      points
+    end
+
+    private def build_pen(state : MapState) : Qt6::QPen
+      pen = Qt6::QPen.new(@stroke_color, [@stroke_width * state.zoom, 1.0].max)
+      pen.cap_style = case @stroke_cap
+                      when "flat"
+                        Qt6::PenCapStyle::FlatCap
+                      when "square"
+                        Qt6::PenCapStyle::SquareCap
+                      else
+                        Qt6::PenCapStyle::RoundCap
+                      end
+      pen.style = case @stroke_type
+                  when "dashed"
+                    Qt6::PenStyle::DashLine
+                  when "dotted"
+                    Qt6::PenStyle::DotLine
+                  else
+                    Qt6::PenStyle::SolidLine
+                  end
+      pen
+    end
+
+    private def build_screen_path(state : MapState) : Qt6::QPainterPath
+      world_path = transformed_path
+      return world_path if world_path.empty?
+
+      path = Qt6::QPainterPath.new
+      world_path.element_count.times do |index|
+        element = world_path.element_at(index)
+        point = state.screen_point(Qt6::PointF.new(element.x, element.y))
+        case element.type
+        when Qt6::PainterPathElementType::MoveTo
+          path.move_to(point)
+        when Qt6::PainterPathElementType::LineTo
+          path.line_to(point)
+        when Qt6::PainterPathElementType::CurveTo
+          control_1 = point
+          control_2 = state.screen_point(world_path.element_at(index + 1).point)
+          end_point = state.screen_point(world_path.element_at(index + 2).point)
+          path.cubic_to(control_1, control_2, end_point)
+        when Qt6::PainterPathElementType::CurveToData
+        else
+        end
+      end
+      path
+    end
+
+    private def pointf(point : Tuple(Float64, Float64)) : Qt6::PointF
+      Qt6::PointF.new(point[0], point[1])
+    end
+
+    private def self.json_number(value : JSON::Any?) : Float64?
+      return nil unless value
+
+      value.as_f? || value.as_i?.try(&.to_f64)
+    end
+
+    private def self.color_from_any(value : JSON::Any?, default : Qt6::Color) : Qt6::Color
+      return default unless value
+
+      if color = value.as_s?
+        color_from_hex(color, default)
+      else
+        default
+      end
+    end
+
+    private def self.color_from_hex(value : String, default : Qt6::Color) : Qt6::Color
+      clean = value.starts_with?("#") ? value[1..] : value
+      return default unless clean.size == 6 || clean.size == 8
+
+      if clean.size == 6
+        red = clean[0, 2].to_i?(16)
+        green = clean[2, 2].to_i?(16)
+        blue = clean[4, 2].to_i?(16)
+        return default unless red && green && blue
+        Qt6::Color.new(red, green, blue, 255)
+      else
+        alpha = clean[0, 2].to_i?(16)
+        red = clean[2, 2].to_i?(16)
+        green = clean[4, 2].to_i?(16)
+        blue = clean[6, 2].to_i?(16)
+        return default unless alpha && red && green && blue
+        Qt6::Color.new(red, green, blue, alpha)
+      end
+    end
+
+    private def color_hex(color : Qt6::Color) : String
+      "##{component_hex(color.red)}#{component_hex(color.green)}#{component_hex(color.blue)}"
+    end
+
+    private def component_hex(value : Int32) : String
+      value.clamp(0, 255).to_s(16).rjust(2, '0')
+    end
+  end
+
+  class SketchLayer < MapLayer
+    getter objects : Array(SketchObject)
+    property shadow_enabled : Bool
+    property shadow_type : String
+    property shadow_color : Qt6::Color
+    property shadow_opacity : Float64
+    property shadow_angle : Float64
+    property shadow_distance : Float64
+    property shadow_spread : Float64
+    property shadow_size : Float64
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @objects = [] of SketchObject
+      @shadow_enabled = false
+      @shadow_type = "outer"
+      @shadow_color = Qt6::Color.new(0, 0, 0)
+      @shadow_opacity = 0.5
+      @shadow_angle = 120.0
+      @shadow_distance = 5.0
+      @shadow_spread = 0.0
+      @shadow_size = 5.0
+    end
+
+    def add_object(object : SketchObject) : Nil
+      @objects << object
+    end
+
+    def remove_object(object : SketchObject) : Bool
+      index = @objects.index(object)
+      return false unless index
+
+      @objects.delete_at(index)
+      true
+    end
+
+    def clear_objects : Nil
+      @objects.clear
+    end
+
+    def sketch_count : Int32
+      @objects.size.to_i32
+    end
+
+    def nearest_object(screen_point : Qt6::PointF, state : MapState, threshold : Float64 = 8.0) : SketchObject?
+      world = state.screen_to_world(screen_point)
+      @objects.reverse_each do |object|
+        return object if object.contains_point(world, threshold / state.zoom)
+      end
+      nil
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      layer_opacity = opacity / 100.0
+      @objects.each do |object|
+        object.paint(painter, state, layer_opacity)
+      end
+
+      if selected = state.selected_sketch_object
+        return unless @objects.includes?(selected)
+
+        selected.draw_selection(painter, state, accent)
+      end
+    end
+  end
+
   class AssetObject
     @image : Qt6::QImage?
 

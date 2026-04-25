@@ -196,7 +196,19 @@
       "visible": true,
       "opacity": 1.0,
       "type": "sketch",
-      "objects": []
+      "objects": [
+        {
+          "id": "sketchrect",
+          "shape_type": "rect",
+          "points": [[40.0, 45.0], [95.0, 78.0]],
+          "stroke_color": "#884422",
+          "stroke_width": 3.0,
+          "fill_enabled": true,
+          "fill_color": "#ccb866",
+          "fill_opacity": 0.4,
+          "rotation": 8.0
+        }
+      ]
     },
     {
       "id": "assetfixture",

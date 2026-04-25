@@ -3,12 +3,13 @@ require "./map_state"
 
 module WargameMapToolCrystal
   class MapCanvas
-    CLICK_SELECTION_THRESHOLD = 5.0
+    CLICK_SELECTION_THRESHOLD   = 5.0
     MIN_FREEFORM_POINT_DISTANCE = 2.0
 
     @press_pointer : Qt6::PointF?
     @drag_text_object : TextObject?
     @drag_asset_object : AssetObject?
+    @drag_sketch_object : SketchObject?
     @drag_path_object : PathObject?
     @drag_path_endpoint : String?
     @drag_freeform_path_object : FreeformPathObject?
@@ -21,6 +22,8 @@ module WargameMapToolCrystal
     @fill_drag_count : Int32
     @hexside_drag_count : Int32
     @drag_mode : String
+    @sketch_preview_start : Qt6::PointF?
+    @sketch_preview_end : Qt6::PointF?
 
     getter widget : Qt6::EventWidget
 
@@ -32,6 +35,7 @@ module WargameMapToolCrystal
       @press_pointer = nil
       @drag_text_object = nil
       @drag_asset_object = nil
+      @drag_sketch_object = nil
       @drag_path_object = nil
       @drag_path_endpoint = nil
       @drag_freeform_path_object = nil
@@ -44,6 +48,8 @@ module WargameMapToolCrystal
       @fill_drag_count = 0
       @hexside_drag_count = 0
       @drag_mode = "pan"
+      @sketch_preview_start = nil
+      @sketch_preview_end = nil
       @drag_moved = false
       wire_events
     end
@@ -62,6 +68,7 @@ module WargameMapToolCrystal
         @press_pointer = event.position
         @drag_text_object = nil
         @drag_asset_object = nil
+        @drag_sketch_object = nil
         @drag_path_object = nil
         @drag_path_endpoint = nil
         @drag_freeform_path_object = nil
@@ -73,6 +80,8 @@ module WargameMapToolCrystal
         @fill_drag_count = 0
         @hexside_drag_count = 0
         @drag_mode = "pan"
+        @sketch_preview_start = nil
+        @sketch_preview_end = nil
         @drag_moved = false
 
         handled_press = false
@@ -143,6 +152,35 @@ module WargameMapToolCrystal
                 @state.dragging = false
                 @press_pointer = nil
                 @drag_mode = "freeform_remove"
+                handled_press = true
+              end
+            end
+          end
+        elsif @state.active_tool == "Sketch"
+          @state.hover_screen = event.position
+          @state.hover_hex = @state.pick_hex(event.position)
+
+          if event.button == 1
+            selected = @state.selected_sketch_object if @state.selected_sketch_present?
+            hovered = @state.hovered_sketch_object
+            if selected && hovered == selected
+              @drag_sketch_object = selected
+              @drag_mode = "sketch_move"
+              handled_press = true
+            else
+              world = @state.screen_to_world(event.position)
+              @sketch_preview_start = world
+              @sketch_preview_end = world
+              @drag_mode = "sketch_pending"
+            end
+          elsif event.button == 2
+            if object = @state.hovered_sketch_object
+              if (layer = @state.sketch_layer) && layer.remove_object(object)
+                @state.clear_sketch_selection if @state.selected_sketch_object == object
+                refresh("Removed sketch #{object.shape_type}")
+                @state.dragging = false
+                @press_pointer = nil
+                @drag_mode = "sketch_remove"
                 handled_press = true
               end
             end
@@ -235,6 +273,13 @@ module WargameMapToolCrystal
             elsif @drag_mode == "asset_move" && (object = @drag_asset_object)
               object.x += dx / @state.zoom
               object.y += dy / @state.zoom
+            elsif @drag_mode == "sketch_move" && (sketch_object = @drag_sketch_object)
+              previous_world = @state.screen_to_world(@state.last_pointer)
+              current_world = @state.screen_to_world(event.position)
+              sketch_object.translate(
+                current_world.x.to_f64 - previous_world.x.to_f64,
+                current_world.y.to_f64 - previous_world.y.to_f64,
+              )
             elsif @drag_mode == "path_endpoint_move" && (path_object = @drag_path_object)
               @state.hover_screen = event.position
               @state.hover_hex = @state.pick_hex(event.position)
@@ -271,6 +316,11 @@ module WargameMapToolCrystal
                 @state.hover_screen = event.position
                 @state.hover_hex = @state.pick_hex(event.position)
               end
+            elsif @drag_mode == "sketch_pending" || @drag_mode == "sketch_draw"
+              @drag_mode = "sketch_draw"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              @sketch_preview_end = @state.screen_to_world(event.position)
             else
               @state.pan_x += dx
               @state.pan_y += dy
@@ -325,6 +375,17 @@ module WargameMapToolCrystal
               refresh("Created freeform path with #{object.point_count} points")
             else
               refresh("Freeform path creation failed")
+            end
+          elsif @drag_mode == "sketch_draw"
+            if start_point = @sketch_preview_start
+              end_point = @sketch_preview_end || @state.screen_to_world(event.position)
+              if object = @state.create_sketch_rectangle(start_point, end_point)
+                refresh("Created sketch rectangle")
+              else
+                refresh("Sketch creation failed")
+              end
+            else
+              refresh("Sketch creation failed")
             end
           elsif !@drag_moved && @state.active_tool == "Text"
             if object = @state.select_hovered_text
@@ -402,6 +463,13 @@ module WargameMapToolCrystal
               @state.clear_freeform_path_selection
               refresh("Cleared freeform path selection")
             end
+          elsif !@drag_moved && @state.active_tool == "Sketch"
+            if object = @state.select_hovered_sketch
+              refresh("Selected sketch #{object.shape_type}")
+            else
+              @state.clear_sketch_selection
+              refresh("Cleared sketch selection")
+            end
           elsif !@drag_moved && @state.active_tool == "Asset"
             if object = @state.select_hovered_asset
               refresh("Selected asset '#{object.label}'")
@@ -430,6 +498,10 @@ module WargameMapToolCrystal
             if object = @drag_freeform_path_object
               refresh("Moved freeform path (#{object.point_count} points)")
             end
+          elsif @drag_moved && @drag_mode == "sketch_move"
+            if sketch_object = @drag_sketch_object
+              refresh("Moved sketch #{sketch_object.shape_type}")
+            end
           elsif @drag_moved
             @status_callback.call("View settled at #{@state.zoom.round(2)}x")
           end
@@ -438,6 +510,7 @@ module WargameMapToolCrystal
           @press_pointer = nil
           @drag_text_object = nil
           @drag_asset_object = nil
+          @drag_sketch_object = nil
           @drag_path_object = nil
           @drag_path_endpoint = nil
           @drag_freeform_path_object = nil
@@ -447,6 +520,8 @@ module WargameMapToolCrystal
           @hexside_drag_count = 0
           @last_hexside_drag_edge = nil
           @drag_mode = "pan"
+          @sketch_preview_start = nil
+          @sketch_preview_end = nil
           @drag_moved = false
         end
       end
@@ -528,6 +603,15 @@ module WargameMapToolCrystal
                 refresh("Freeform path delete failed")
               end
             end
+          elsif @state.active_tool == "Sketch"
+            if object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+              if (layer = @state.sketch_layer) && layer.remove_object(object)
+                @state.clear_sketch_selection
+                refresh("Deleted sketch #{object.shape_type}")
+              else
+                refresh("Sketch delete failed")
+              end
+            end
           end
         end
       end
@@ -543,6 +627,7 @@ module WargameMapToolCrystal
         draw_hovered_hexside_edge(painter)
         draw_pending_path_preview(painter)
         draw_pending_freeform_preview(painter)
+        draw_pending_sketch_preview(painter)
         draw_hovered_path_endpoint(painter)
         draw_hud(painter)
       end
@@ -571,6 +656,10 @@ module WargameMapToolCrystal
 
       if object = @state.hovered_freeform_path_object
         base_message = "#{base_message} | Freeform: #{object.point_count} points"
+      end
+
+      if object = @state.hovered_sketch_object
+        base_message = "#{base_message} | Sketch: #{object.shape_type}"
       end
 
       if object = @state.hovered_path_object
@@ -748,6 +837,30 @@ module WargameMapToolCrystal
       end
 
       @freeform_draw_points << point
+    end
+
+    private def draw_pending_sketch_preview(painter : Qt6::QPainter) : Nil
+      return unless @drag_mode == "sketch_pending" || @drag_mode == "sketch_draw"
+      return unless start_point = @sketch_preview_start
+      return unless end_point = @sketch_preview_end
+
+      start_screen = @state.screen_point(start_point)
+      end_screen = @state.screen_point(end_point)
+      rect = Qt6::RectF.new(
+        [start_screen.x, end_screen.x].min,
+        [start_screen.y, end_screen.y].min,
+        (end_screen.x - start_screen.x).abs,
+        (end_screen.y - start_screen.y).abs,
+      )
+
+      painter.save
+      preview_pen = Qt6::QPen.new(@state.active_layer.accent, 2.0)
+      preview_pen.style = Qt6::PenStyle::DashLine
+      painter.pen = preview_pen
+      painter.brush = Qt6::Color.new(0, 0, 0, 0)
+      painter.opacity = 0.75
+      painter.draw_rect(rect)
+      painter.restore
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil

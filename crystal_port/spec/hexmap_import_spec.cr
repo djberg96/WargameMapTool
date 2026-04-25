@@ -8,7 +8,7 @@ describe WargameMapToolCrystal::MapState do
     message = state.load_hexmap(fixture_path)
     message.should_not be_nil
     message.not_nil!.should contain("Opened import_smoke.hexmap")
-    message.not_nil!.should contain("skipped draw, sketch")
+    message.not_nil!.should contain("skipped draw")
 
     state.source_path.should eq(fixture_path)
     state.project_path.should be_nil
@@ -65,6 +65,12 @@ describe WargameMapToolCrystal::MapState do
     text.objects.first.text.should eq("Depot")
     text.objects.first.alignment.should eq("center")
 
+    sketch = state.sketch_layer.not_nil!
+    sketch.sketch_count.should eq(1)
+    sketch.objects.first.shape_type.should eq("rect")
+    sketch.objects.first.fill_enabled.should be_true
+    sketch.objects.first.rotation.should eq(8.0)
+
     assets = state.asset_layer.not_nil!
     assets.asset_count.should eq(1)
     assets.objects.first.image_path.should_not be_nil
@@ -87,7 +93,12 @@ describe WargameMapToolCrystal::MapState do
       exported["grid"]["first_row_offset"].as_s.should eq("odd")
 
       layer_types = exported["layers"].as_a.map { |layer| layer["type"].as_s }
-      layer_types.should eq(["background", "fill", "hexside", "border", "path", "freeform_path", "text", "asset"])
+      layer_types.should eq(["background", "fill", "hexside", "border", "path", "freeform_path", "sketch", "text", "asset"])
+
+      sketch_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "sketch" }
+      sketch_layer.should_not be_nil
+      sketch_layer.not_nil!["objects"].as_a.size.should eq(1)
+      sketch_layer.not_nil!["objects"].as_a.first["shape_type"].as_s.should eq("rect")
 
       asset_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "asset" }
       asset_layer.should_not be_nil
@@ -99,6 +110,7 @@ describe WargameMapToolCrystal::MapState do
       roundtrip.first_row_offset.should eq("odd")
       roundtrip.asset_layer.not_nil!.asset_count.should eq(1)
       roundtrip.asset_layer.not_nil!.objects.first.has_image?.should be_true
+      roundtrip.sketch_layer.not_nil!.sketch_count.should eq(1)
       roundtrip.text_layer.not_nil!.text_count.should eq(1)
       roundtrip.path_layer.not_nil!.path_count.should eq(1)
     ensure

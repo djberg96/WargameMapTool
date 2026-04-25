@@ -6,7 +6,7 @@ module WargameMapToolCrystal
   VERSION = "0.1.0"
 
   class MapState
-    TOOL_NAMES = ["Background", "Fill", "Border", "Hexside", "Path", "Freeform", "Text", "Asset"] of String
+    TOOL_NAMES = ["Background", "Fill", "Border", "Hexside", "Path", "Freeform", "Sketch", "Text", "Asset"] of String
 
     property zoom : Float64
     property pan_x : Float64
@@ -30,6 +30,7 @@ module WargameMapToolCrystal
     property selected_hexside_object : HexsideObject?
     property selected_path_object : PathObject?
     property selected_freeform_path_object : FreeformPathObject?
+    property selected_sketch_object : SketchObject?
     property selected_text_object : TextObject?
     property selected_asset_object : AssetObject?
     getter layers : Array(MapLayer)
@@ -60,6 +61,7 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -91,6 +93,7 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @cols = 18
@@ -146,6 +149,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def sketch_layer : SketchLayer?
+      @layers.each do |layer|
+        return layer.as(SketchLayer) if layer.is_a?(SketchLayer)
+      end
+
+      nil
+    end
+
     def border_layer : BorderLayer?
       @layers.each do |layer|
         return layer.as(BorderLayer) if layer.is_a?(BorderLayer)
@@ -189,6 +200,14 @@ module WargameMapToolCrystal
     def text_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(TextLayer)
+      end
+
+      nil
+    end
+
+    def sketch_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(SketchLayer)
       end
 
       nil
@@ -431,6 +450,64 @@ module WargameMapToolCrystal
       object
     end
 
+    def selected_sketch_present? : Bool
+      object = @selected_sketch_object
+      layer = sketch_layer
+      return false unless object && layer
+
+      layer.objects.includes?(object)
+    end
+
+    def clear_sketch_selection : Nil
+      @selected_sketch_object = nil
+    end
+
+    def create_sketch_rectangle(start_point : Qt6::PointF, end_point : Qt6::PointF) : SketchObject?
+      layer = sketch_layer
+      return nil unless layer
+      return nil if (start_point.x - end_point.x).abs < 1.0 || (start_point.y - end_point.y).abs < 1.0
+
+      if index = sketch_layer_index
+        set_active_layer(index)
+      end
+
+      style_source = selected_sketch_present? ? @selected_sketch_object : nil
+      object = SketchObject.new(
+        id: next_sketch_id,
+        shape_type: "rect",
+        points: [
+          {start_point.x.to_f64, start_point.y.to_f64},
+          {end_point.x.to_f64, end_point.y.to_f64},
+        ],
+        stroke_color: style_source ? style_source.stroke_color : layer.accent,
+        stroke_width: style_source ? style_source.stroke_width : 2.0,
+        stroke_type: style_source ? style_source.stroke_type : "solid",
+        dash_length: style_source ? style_source.dash_length : 8.0,
+        gap_length: style_source ? style_source.gap_length : 4.0,
+        stroke_cap: style_source ? style_source.stroke_cap : "round",
+        fill_enabled: style_source ? style_source.fill_enabled : false,
+        fill_color: style_source ? style_source.fill_color : layer.accent,
+        fill_opacity: style_source ? style_source.fill_opacity : 0.25,
+        fill_type: style_source ? style_source.fill_type : "color",
+        fill_texture_id: style_source ? style_source.fill_texture_id : "",
+        fill_texture_zoom: style_source ? style_source.fill_texture_zoom : 1.0,
+        fill_texture_rotation: style_source ? style_source.fill_texture_rotation : 0.0,
+        rotation: style_source ? style_source.rotation : 0.0,
+        draw_over_grid: style_source ? style_source.draw_over_grid : false,
+      )
+
+      layer.add_object(object)
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_freeform_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @selected_sketch_object = object
+      object
+    end
+
     def duplicate_selected_asset : AssetObject?
       source = @selected_asset_object
       layer = asset_layer
@@ -501,9 +578,31 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_asset_object = nil
       @selected_text_object = object
       object
+    end
+
+    def select_hovered_sketch : SketchObject?
+      object = hovered_sketch_object
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_freeform_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @selected_sketch_object = object
+      object
+    end
+
+    def hovered_sketch_object : SketchObject?
+      screen = @hover_screen
+      layer = sketch_layer
+      return nil unless screen && layer
+
+      layer.nearest_object(screen, self)
     end
 
     def hovered_text_object : TextObject?
@@ -520,6 +619,7 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = object
       object
@@ -530,6 +630,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
@@ -542,6 +643,7 @@ module WargameMapToolCrystal
       @selected_border_object = nil
       @selected_hexside_object = nil
       @selected_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
@@ -645,6 +747,9 @@ module WargameMapToolCrystal
           json.field "freeform_path_layer" do
             write_object_layer_snapshot(json, freeform_path_layer)
           end
+          json.field "sketch_layer" do
+            write_object_layer_snapshot(json, sketch_layer)
+          end
           json.field "text_layer" do
             write_object_layer_snapshot(json, text_layer)
           end
@@ -707,6 +812,7 @@ module WargameMapToolCrystal
       restore_hexside_layer_snapshot(data["hexside_layer"]?)
       restore_path_layer_snapshot(data["path_layer"]?)
       restore_freeform_path_layer_snapshot(data["freeform_path_layer"]?)
+      restore_sketch_layer_snapshot(data["sketch_layer"]?)
       restore_text_layer_snapshot(data["text_layer"]?)
       restore_asset_layer_snapshot(data["asset_layer"]?)
 
@@ -714,6 +820,7 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @pending_path_anchor = nil
@@ -857,6 +964,19 @@ module WargameMapToolCrystal
             end
           end
 
+          json.field "sketch_objects" do
+            if layer = sketch_layer
+              json.array do
+                layer.objects.each do |object|
+                  object.write_json(json)
+                end
+              end
+            else
+              json.array do
+              end
+            end
+          end
+
           json.field "asset_objects" do
             if layer = asset_layer
               json.array do
@@ -955,6 +1075,7 @@ module WargameMapToolCrystal
       @pending_path_anchor = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       data["text_objects"]?.try(&.as_a?).try do |objects|
@@ -979,6 +1100,15 @@ module WargameMapToolCrystal
           layer.clear_paths
           objects.each do |object_data|
             layer.add_path(FreeformPathObject.from_json(object_data))
+          end
+        end
+      end
+
+      data["sketch_objects"]?.try(&.as_a?).try do |objects|
+        if layer = sketch_layer
+          layer.clear_objects
+          objects.each do |object_data|
+            layer.add_object(SketchObject.from_json(object_data))
           end
         end
       end
@@ -1030,6 +1160,8 @@ module WargameMapToolCrystal
             import_path_layer(layer_data)
           when "freeform_path"
             import_freeform_path_layer(layer_data)
+          when "sketch"
+            import_sketch_layer(layer_data)
           when "text"
             import_text_layer(layer_data)
           when "asset"
@@ -1079,6 +1211,9 @@ module WargameMapToolCrystal
               if layer = freeform_path_layer
                 write_hexmap_freeform_path_layer(json, layer)
               end
+              if layer = sketch_layer
+                write_hexmap_sketch_layer(json, layer)
+              end
               if layer = text_layer
                 write_hexmap_text_layer(json, layer)
               end
@@ -1101,6 +1236,7 @@ module WargameMapToolCrystal
       seed_default_path_objects(path_layer)
       freeform_path_layer = FreeformPathLayer.new("Freeform Paths", "Freeform Paths", true, Qt6::Color.new(82, 122, 164))
       seed_default_freeform_path_objects(freeform_path_layer)
+      sketch_layer = SketchLayer.new("Sketches", "Sketch", true, Qt6::Color.new(120, 96, 62))
 
       border_layer = BorderLayer.new("Borders", "Borders", true, Qt6::Color.new(58, 54, 48))
       hexside_layer = HexsideLayer.new("Hexsides", "Hexsides", true, Qt6::Color.new(70, 108, 154))
@@ -1118,6 +1254,7 @@ module WargameMapToolCrystal
         hexside_layer,
         path_layer,
         freeform_path_layer,
+        sketch_layer,
         text_layer,
         asset_layer,
       ] of MapLayer
@@ -1131,6 +1268,12 @@ module WargameMapToolCrystal
 
     private def activate_freeform_path_layer : Nil
       if index = freeform_path_layer_index
+        set_active_layer(index)
+      end
+    end
+
+    private def activate_sketch_layer : Nil
+      if index = sketch_layer_index
         set_active_layer(index)
       end
     end
@@ -1315,6 +1458,7 @@ module WargameMapToolCrystal
       hexside_layer.try(&.clear_hexsides)
       path_layer.try(&.clear_paths)
       freeform_path_layer.try(&.clear_paths)
+      sketch_layer.try(&.clear_objects)
       text_layer.try(&.clear_texts)
       asset_layer.try(&.clear_assets)
 
@@ -1324,6 +1468,7 @@ module WargameMapToolCrystal
       @selected_hexside_object = nil
       @selected_path_object = nil
       @selected_freeform_path_object = nil
+      @selected_sketch_object = nil
       @selected_text_object = nil
       @selected_asset_object = nil
       @active_tool = "Fill"
@@ -1561,6 +1706,27 @@ module WargameMapToolCrystal
       end
 
       layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_sketch_layer(data : JSON::Any) : Nil
+      layer = sketch_layer
+      return unless layer
+
+      apply_layer_base(layer, data)
+      layer.shadow_enabled = data["shadow_enabled"]?.try(&.as_bool?) || false
+      layer.shadow_type = data["shadow_type"]?.try(&.as_s?) || "outer"
+      layer.shadow_color = color_from_json(data["shadow_color"]?, Qt6::Color.new(0, 0, 0))
+      layer.shadow_opacity = object_opacity(data["shadow_opacity"]?)
+      layer.shadow_angle = json_number(data["shadow_angle"]?) || 120.0
+      layer.shadow_distance = json_number(data["shadow_distance"]?) || 5.0
+      layer.shadow_spread = json_number(data["shadow_spread"]?) || 0.0
+      layer.shadow_size = json_number(data["shadow_size"]?) || (json_number(data["shadow_blur_radius"]?) || 5.0)
+
+      data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_object(SketchObject.from_json(object_data))
+        end
+      end
     end
 
     private def import_asset_layer(project_path : String, data : JSON::Any) : Nil
@@ -1802,6 +1968,27 @@ module WargameMapToolCrystal
             end
           end
         end
+      end
+    end
+
+    private def write_hexmap_sketch_layer(json : JSON::Builder, layer : SketchLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "sketch", "crystal_sketch")
+        json.field "objects" do
+          json.array do
+            layer.objects.each do |object|
+              object.write_json(json)
+            end
+          end
+        end
+        json.field "shadow_enabled", layer.shadow_enabled
+        json.field "shadow_type", layer.shadow_type
+        json.field "shadow_color", hex_color_string(layer.shadow_color)
+        json.field "shadow_opacity", layer.shadow_opacity
+        json.field "shadow_angle", layer.shadow_angle
+        json.field "shadow_distance", layer.shadow_distance
+        json.field "shadow_spread", layer.shadow_spread
+        json.field "shadow_size", layer.shadow_size
       end
     end
 
@@ -2138,7 +2325,7 @@ module WargameMapToolCrystal
       end
     end
 
-    private def write_object_layer_snapshot(json : JSON::Builder, layer : BorderLayer | HexsideLayer | PathLayer | FreeformPathLayer | TextLayer | AssetLayer | Nil) : Nil
+    private def write_object_layer_snapshot(json : JSON::Builder, layer : BorderLayer | HexsideLayer | PathLayer | FreeformPathLayer | SketchLayer | TextLayer | AssetLayer | Nil) : Nil
       unless layer
         json.null
         return
@@ -2237,6 +2424,29 @@ module WargameMapToolCrystal
       end
     end
 
+    private def restore_sketch_layer_snapshot(data : JSON::Any?) : Nil
+      layer = sketch_layer
+      return unless layer
+
+      layer.clear_objects
+      return unless layer_data = data
+
+      apply_layer_snapshot_base(layer, layer_data)
+      layer.shadow_enabled = layer_data["shadow_enabled"]?.try(&.as_bool?) || false
+      layer.shadow_type = layer_data["shadow_type"]?.try(&.as_s?) || "outer"
+      layer.shadow_color = color_from_json(layer_data["shadow_color"]?, Qt6::Color.new(0, 0, 0))
+      layer.shadow_opacity = json_number(layer_data["shadow_opacity"]?) || 0.5
+      layer.shadow_angle = json_number(layer_data["shadow_angle"]?) || 120.0
+      layer.shadow_distance = json_number(layer_data["shadow_distance"]?) || 5.0
+      layer.shadow_spread = json_number(layer_data["shadow_spread"]?) || 0.0
+      layer.shadow_size = json_number(layer_data["shadow_size"]?) || 5.0
+      layer_data["objects"]?.try(&.as_a?).try do |objects|
+        objects.each do |object_data|
+          layer.add_object(SketchObject.from_json(object_data))
+        end
+      end
+    end
+
     private def restore_asset_layer_snapshot(data : JSON::Any?) : Nil
       layer = asset_layer
       return unless layer
@@ -2284,6 +2494,10 @@ module WargameMapToolCrystal
         json.field "blue", color.blue
         json.field "alpha", color.alpha
       end
+    end
+
+    private def next_sketch_id : String
+      "sketch#{Time.utc.to_unix_ms}#{Random.rand(10_000)}"
     end
 
     private def parse_hex_color(value : String, default : Qt6::Color) : Qt6::Color
