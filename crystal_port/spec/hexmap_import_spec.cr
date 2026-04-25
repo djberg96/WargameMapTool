@@ -72,4 +72,37 @@ describe WargameMapToolCrystal::MapState do
     assets.objects.first.has_image?.should be_true
     assets.objects.first.snap_to_hex.should be_false
   end
+
+  it "exports supported state as a source-compatible hexmap" do
+    fixture_path = File.expand_path("./fixtures/import_smoke.hexmap", __DIR__)
+    export_path = "/tmp/wargame-map-tool-crystal-export-#{Process.pid}.hexmap"
+    state = WargameMapToolCrystal::MapState.new
+
+    begin
+      state.load_hexmap(fixture_path).should_not be_nil
+      state.save_hexmap(export_path)
+
+      exported = JSON.parse(File.read(export_path))
+      exported["grid"]["orientation"].as_s.should eq("flat")
+      exported["grid"]["first_row_offset"].as_s.should eq("odd")
+
+      layer_types = exported["layers"].as_a.map { |layer| layer["type"].as_s }
+      layer_types.should eq(["background", "fill", "hexside", "border", "path", "freeform_path", "text", "asset"])
+
+      asset_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "asset" }
+      asset_layer.should_not be_nil
+      asset_layer.not_nil!["objects"].as_a.first["image"].as_s.should eq("builtin:operational/operational_poi_town.png")
+
+      roundtrip = WargameMapToolCrystal::MapState.new
+      roundtrip.load_hexmap(export_path).should_not be_nil
+      roundtrip.grid_orientation.should eq("flat")
+      roundtrip.first_row_offset.should eq("odd")
+      roundtrip.asset_layer.not_nil!.asset_count.should eq(1)
+      roundtrip.asset_layer.not_nil!.objects.first.has_image?.should be_true
+      roundtrip.text_layer.not_nil!.text_count.should eq(1)
+      roundtrip.path_layer.not_nil!.path_count.should eq(1)
+    ensure
+      File.delete(export_path) if File.exists?(export_path)
+    end
+  end
 end

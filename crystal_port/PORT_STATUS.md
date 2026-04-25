@@ -37,11 +37,11 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - custom map canvas with pan/zoom, hover, labels, route overlay, and counter overlay
 - renderable Crystal layer seam with a real layer list feeding the canvas paint loop
 - `.hexmap` project import for the Crystal-supported grid settings and layer types, including relative/builtin image path resolution and clean skipping of unsupported layer kinds
+- `.hexmap` project export for the Crystal-supported grid settings and layer types, including builtin asset-path preservation for source-compatible round trips
 - a checked-in Crystal smoke spec for `.hexmap` import coverage plus PNG export
 
 ## What Is Still Missing
 
-- project file serialization for `.hexmap`
 - the actual command stack and undo/redo command translations
 - the remaining real data-backed layer implementations from the Python app beyond background, terrain fills, borders, hexsides, paths, freeform paths, assets, and text
 - asset libraries, texture libraries, palette editors, and manager dialogs

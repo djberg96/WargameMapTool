@@ -908,6 +908,52 @@ module WargameMapToolCrystal
       nil
     end
 
+    def save_hexmap(path : String) : Nil
+      tmp_path = ""
+      tmp_path = "#{path}.tmp"
+      File.write(tmp_path, JSON.build do |json|
+        json.object do
+          json.field "version", 1
+          json.field "grid" do
+            write_hexmap_grid(json)
+          end
+          json.field "layers" do
+            json.array do
+              if layer = background_layer
+                write_hexmap_background_layer(json, layer, path)
+              end
+              if layer = terrain_layer
+                write_hexmap_fill_layer(json, layer)
+              end
+              if layer = hexside_layer
+                write_hexmap_hexside_layer(json, layer)
+              end
+              if layer = border_layer
+                write_hexmap_border_layer(json, layer)
+              end
+              if layer = path_layer
+                write_hexmap_path_layer(json, layer)
+              end
+              if layer = freeform_path_layer
+                write_hexmap_freeform_path_layer(json, layer)
+              end
+              if layer = text_layer
+                write_hexmap_text_layer(json, layer)
+              end
+              if layer = asset_layer
+                write_hexmap_asset_layer(json, layer, path)
+              end
+            end
+          end
+        end
+      end)
+      File.rename(tmp_path, path)
+      @source_path = path
+    rescue error
+      File.delete(tmp_path.not_nil!) if File.exists?(tmp_path.not_nil!)
+      raise error
+    end
+
     private def build_default_layers : Array(MapLayer)
       path_layer = PathLayer.new("Road Net", "Paths", true, Qt6::Color.new(173, 86, 54))
       seed_default_path_objects(path_layer)
@@ -1103,7 +1149,7 @@ module WargameMapToolCrystal
     end
 
     private def bundled_asset_path(file_name : String) : String?
-      path = File.expand_path("../../assets/assets/tac85/#{file_name}", __DIR__)
+      path = File.expand_path("../../../assets/assets/tac85/#{file_name}", __DIR__)
       File.exists?(path) ? path : nil
     end
 
@@ -1399,6 +1445,253 @@ module WargameMapToolCrystal
       end
     end
 
+    private def write_hexmap_grid(json : JSON::Builder) : Nil
+      json.object do
+        json.field "hex_size", @hex_radius
+        json.field "hex_size_mm", hex_size_mm
+        json.field "width", @cols
+        json.field "height", @rows
+        json.field "orientation", @grid_orientation
+        json.field "line_width", 1.0
+        json.field "edge_color", "#000000"
+        json.field "show_center_dots", false
+        json.field "show_coordinates", @show_coordinates
+        json.field "first_row_offset", @first_row_offset
+        json.field "center_dot_size", 3.0
+        json.field "center_dot_color", "#000000"
+        json.field "coord_position", "top"
+        json.field "coord_format", "numeric_dot"
+        json.field "show_border", false
+        json.field "border_color", "#000000"
+        json.field "coord_offset_y", 0.0
+        json.field "coord_font_scale", 18
+        json.field "coord_start_one", false
+        json.field "border_margin", 2.0
+        json.field "border_fill", false
+        json.field "border_fill_color", "#ffffff"
+        json.field "half_hexes", false
+        json.field "grid_style", "lines"
+        json.field "center_dot_outline", false
+        json.field "center_dot_outline_width", 1.0
+        json.field "center_dot_outline_color", "#ffffff"
+        json.field "grid_opacity", 100
+        json.field "center_dot_opacity", 100
+        json.field "coord_opacity", 100
+        json.field "megahex_opacity", 100
+        json.field "megahex_enabled", false
+        json.field "megahex_radius", 1
+        json.field "megahex_mode", "hex_edges"
+        json.field "megahex_color", "#646464"
+        json.field "megahex_width", 3.0
+        json.field "megahex_offset_q", 0
+        json.field "megahex_offset_r", 0
+        json.field "canvas_bg_color", "#2b2b2b"
+        json.field "show_grid", @show_grid
+        json.field "global_lighting_enabled", false
+        json.field "global_lighting_color", "#ffdc64"
+        json.field "global_lighting_opacity", 0
+        json.field "grain_enabled", false
+        json.field "grain_intensity", 20
+        json.field "grain_scale", 1.0
+        json.field "grain_monochrome", true
+        json.field "grain_seed", 42
+      end
+    end
+
+    private def write_hexmap_background_layer(json : JSON::Builder, layer : BackgroundLayer, output_path : String) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "background", "crystal_background")
+        image_path = layer.image_path
+        json.field "image_path", export_image_reference(output_path, image_path) if image_path
+        json.field "offset_x", layer.offset_x
+        json.field "offset_y", layer.offset_y
+        json.field "scale", layer.scale
+        json.field "clip_to_grid", false
+      end
+    end
+
+    private def write_hexmap_fill_layer(json : JSON::Builder, layer : TerrainLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "fill", "crystal_fill")
+        json.field "hexes" do
+          json.object do
+            layer.fills.each do |coords, color|
+              q, r = offset_to_axial(coords[0], coords[1])
+              json.field "#{q},#{r}", hex_color_string(color)
+            end
+          end
+        end
+        json.field "dot_colors" do
+          json.object do
+          end
+        end
+        json.field "coord_colors" do
+          json.object do
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_hexside_layer(json : JSON::Builder, layer : HexsideLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "hexside", "crystal_hexside")
+        json.field "hexsides" do
+          json.array do
+            layer.objects.each do |object|
+              hex_a_q, hex_a_r = offset_to_axial(object.col_a, object.row_a)
+              hex_b_q, hex_b_r = offset_to_axial(object.col_b, object.row_b)
+
+              json.object do
+                json.field "hex_a_q", hex_a_q
+                json.field "hex_a_r", hex_a_r
+                json.field "hex_b_q", hex_b_q
+                json.field "hex_b_r", hex_b_r
+                json.field "color", hex_color_string(object.color)
+                json.field "width", object.width
+                json.field "opacity", object.opacity
+                json.field "random_seed", 0
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_border_layer(json : JSON::Builder, layer : BorderLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "border", "crystal_border")
+        json.field "borders" do
+          json.array do
+            layer.objects.each do |object|
+              hex_a_q, hex_a_r = offset_to_axial(object.col_a, object.row_a)
+              hex_b_q, hex_b_r = offset_to_axial(object.col_b, object.row_b)
+
+              json.object do
+                json.field "hex_a_q", hex_a_q
+                json.field "hex_a_r", hex_a_r
+                json.field "hex_b_q", hex_b_q
+                json.field "hex_b_r", hex_b_r
+                json.field "color", hex_color_string(object.color)
+                json.field "width", object.width
+                if object.line_type != "solid"
+                  json.field "line_type", object.line_type
+                  json.field "element_size", 4.0
+                  json.field "gap_size", 4.0
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_path_layer(json : JSON::Builder, layer : PathLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "path", "crystal_path")
+        json.field "paths" do
+          json.array do
+            layer.objects.each do |object|
+              hex_a_q, hex_a_r = offset_to_axial(object.col_a, object.row_a)
+              hex_b_q, hex_b_r = offset_to_axial(object.col_b, object.row_b)
+
+              json.object do
+                json.field "hex_a_q", hex_a_q
+                json.field "hex_a_r", hex_a_r
+                json.field "hex_b_q", hex_b_q
+                json.field "hex_b_r", hex_b_r
+                json.field "color", hex_color_string(object.color)
+                json.field "width", object.width
+                json.field "line_type", object.line_type if object.line_type != "solid"
+                json.field "opacity", object.opacity if object.opacity != 1.0
+                json.field "random_seed", 0
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_freeform_path_layer(json : JSON::Builder, layer : FreeformPathLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "freeform_path", "crystal_freeform_path")
+        json.field "paths" do
+          json.array do
+            layer.objects.each do |object|
+              json.object do
+                json.field "points" do
+                  json.array do
+                    object.points.each do |point|
+                      json.array do
+                        json.number point[0]
+                        json.number point[1]
+                      end
+                    end
+                  end
+                end
+                json.field "color", hex_color_string(object.color)
+                json.field "width", object.width
+                json.field "opacity", object.opacity if object.opacity != 1.0
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_text_layer(json : JSON::Builder, layer : TextLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "text", "crystal_text")
+        json.field "objects" do
+          json.array do
+            layer.objects.each do |object|
+              json.object do
+                json.field "text", object.text
+                json.field "x", object.x
+                json.field "y", object.y
+                json.field "font_family", object.font_family
+                json.field "font_size", object.font_size
+                json.field "bold", object.bold if object.bold
+                json.field "italic", object.italic if object.italic
+                json.field "color", hex_color_string(object.color)
+                json.field "alignment", object.alignment
+                json.field "opacity", object.opacity if object.opacity != 1.0
+                json.field "rotation", object.rotation if object.rotation != 0.0
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_asset_layer(json : JSON::Builder, layer : AssetLayer, output_path : String) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "asset", "crystal_asset")
+        json.field "objects" do
+          json.array do
+            layer.objects.each do |object|
+              json.object do
+                json.field "image", export_image_reference(output_path, object.image_path)
+                json.field "x", object.x
+                json.field "y", object.y
+                json.field "scale", object.scale
+                json.field "rotation", object.rotation if object.rotation != 0.0
+                json.field "opacity", object.opacity if object.opacity != 1.0
+                json.field "snap_to_hex", object.snap_to_hex
+              end
+            end
+          end
+        end
+      end
+    end
+
+    private def write_hexmap_layer_base(json : JSON::Builder, layer : MapLayer, type : String, id : String) : Nil
+      json.field "id", id
+      json.field "name", layer.name
+      json.field "visible", layer.visible
+      json.field "opacity", layer.opacity / 100.0
+      json.field "type", type
+    end
+
     private def apply_layer_base(layer : MapLayer, data : JSON::Any) : Nil
       layer.name = data["name"]?.try(&.as_s?) || layer.name
       layer.visible = data["visible"]?.try(&.as_bool?) != false
@@ -1418,7 +1711,18 @@ module WargameMapToolCrystal
     end
 
     private def builtin_assets_root : String
-      File.expand_path("../../assets/assets", __DIR__)
+      File.expand_path("../../../assets/assets", __DIR__)
+    end
+
+    private def export_image_reference(output_path : String, image_path : String?) : String
+      return "" unless image_path
+
+      absolute = File.expand_path(image_path)
+      if relative = child_path_within(absolute, builtin_assets_root)
+        return "builtin:#{relative}"
+      end
+
+      absolute
     end
 
     private def resolve_slice_path(slice_path : String, image_path : String) : String
@@ -1739,6 +2043,14 @@ module WargameMapToolCrystal
       end
     end
 
+    private def hex_color_string(color : Qt6::Color) : String
+      if color.alpha < 255
+        "#%02x%02x%02x%02x" % {color.alpha, color.red, color.green, color.blue}
+      else
+        "#%02x%02x%02x" % {color.red, color.green, color.blue}
+      end
+    end
+
     private def object_opacity(value : JSON::Any?, default : Float64 = 1.0) : Float64
       opacity = json_number(value)
       return default unless opacity
@@ -1799,6 +2111,21 @@ module WargameMapToolCrystal
 
     private def hex_corner_start_angle : Float64
       @grid_orientation == "flat" ? 0.0 : Math::PI / 6.0
+    end
+
+    private def hex_size_mm : Float64
+      (Math.sqrt(3.0) * @hex_radius) * 25.4 / 96.0
+    end
+
+    private def child_path_within(path : String, parent : String) : String?
+      normalized_path = File.expand_path(path)
+      normalized_parent = File.expand_path(parent)
+      prefix = "#{normalized_parent}/"
+
+      return "" if normalized_path == normalized_parent
+      return nil unless normalized_path.starts_with?(prefix)
+
+      normalized_path.byte_slice(prefix.bytesize, normalized_path.bytesize - prefix.bytesize)
     end
 
     def hex_label(col : Int32, row : Int32) : String

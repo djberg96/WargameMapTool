@@ -242,6 +242,11 @@ module WargameMapToolCrystal
       save_slice_dialog.accept_mode = Qt6::FileDialogAcceptMode::Save
       save_slice_dialog.file_mode = Qt6::FileDialogFileMode::AnyFile
 
+      save_hexmap_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Hex Map Files (*.hexmap);;All Files (*)")
+      save_hexmap_dialog.window_title = "Export Hexmap"
+      save_hexmap_dialog.accept_mode = Qt6::FileDialogAcceptMode::Save
+      save_hexmap_dialog.file_mode = Qt6::FileDialogFileMode::AnyFile
+
       background_dialog = Qt6::FileDialog.new(@widget, Dir.current, "Images (*.png *.jpg *.jpeg *.bmp *.gif *.webp);;All Files (*)")
       background_dialog.window_title = "Import Background Image"
       background_dialog.accept_mode = Qt6::FileDialogAcceptMode::Open
@@ -346,6 +351,35 @@ module WargameMapToolCrystal
           end
         else
           handle_status("Save canceled")
+        end
+      end
+
+      save_hexmap_action = Qt6::Action.new("Export Hexmap…", @widget)
+      save_hexmap_action.shortcut = "Ctrl+S"
+      save_hexmap_action.on_triggered do
+        suggested = if source_path = @state.source_path
+                      source_path
+                    else
+                      File.join(Dir.current, "wargame-map-tool.hexmap")
+                    end
+        save_hexmap_dialog.select_file(suggested)
+
+        if save_hexmap_dialog.exec == Qt6::DialogCode::Accepted
+          output = save_hexmap_dialog.selected_file
+          if output.empty?
+            handle_status("Export canceled")
+          else
+            output = "#{output}.hexmap" unless output.downcase.ends_with?(".hexmap")
+            begin
+              @state.save_hexmap(output)
+              refresh_inspector
+              handle_status("Exported #{File.basename(output)}")
+            rescue
+              handle_status("Hexmap export failed")
+            end
+          end
+        else
+          handle_status("Export canceled")
         end
       end
 
@@ -750,6 +784,7 @@ module WargameMapToolCrystal
       file_menu << import_background_action
       file_menu << add_text_action
       file_menu << add_asset_action
+      file_menu << save_hexmap_action
       file_menu << save_slice_action
       file_menu << export_action
       file_menu.add_separator
