@@ -198,4 +198,41 @@ describe WargameMapToolCrystal::MapState do
     state.show_assets.should be_false
     state.active_tool.should eq("Asset")
   end
+
+  it "creates non-rectangle sketch shapes from the current sketch tool defaults" do
+    state = WargameMapToolCrystal::MapState.new
+
+    state.sketch_shape_type = "line"
+    line = state.create_sketch_from_drag(Qt6::PointF.new(10.0, 20.0), Qt6::PointF.new(42.0, 20.0))
+    line.should_not be_nil
+    line.not_nil!.shape_type.should eq("line")
+    line.not_nil!.points.size.should eq(2)
+
+    state.sketch_shape_type = "polygon"
+    state.sketch_polygon_sides = 5
+    polygon = state.create_sketch_from_drag(Qt6::PointF.new(30.0, 30.0), Qt6::PointF.new(54.0, 30.0))
+    polygon.should_not be_nil
+    polygon.not_nil!.shape_type.should eq("polygon")
+    polygon.not_nil!.num_sides.should eq(5)
+    polygon.not_nil!.radius.should be > 20.0
+
+    state.sketch_shape_type = "ellipse"
+    state.sketch_perfect_circle = true
+    ellipse = state.create_sketch_from_drag(Qt6::PointF.new(60.0, 60.0), Qt6::PointF.new(100.0, 90.0))
+    ellipse.should_not be_nil
+    ellipse.not_nil!.shape_type.should eq("ellipse")
+    ellipse.not_nil!.rx.should eq(15.0)
+    ellipse.not_nil!.ry.should eq(15.0)
+
+    state.sketch_shape_type = "freehand"
+    state.sketch_freehand_closed = true
+    freehand = state.create_sketch_freehand([{0.0, 0.0}, {18.0, 0.0}, {18.0, 12.0}])
+    freehand.should_not be_nil
+    freehand.not_nil!.shape_type.should eq("freehand")
+    freehand.not_nil!.closed.should be_true
+    freehand.not_nil!.points.size.should eq(3)
+
+    state.sketch_layer.not_nil!.sketch_count.should eq(4)
+    state.selected_sketch_object.should eq(freehand)
+  end
 end

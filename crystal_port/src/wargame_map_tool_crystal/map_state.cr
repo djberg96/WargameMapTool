@@ -25,6 +25,8 @@ module WargameMapToolCrystal
     property hover_hex : Tuple(Int32, Int32)?
     property hover_screen : Qt6::PointF?
     property fill_radius : Int32
+    property sketch_freehand_closed : Bool
+    property sketch_perfect_circle : Bool
     property pending_path_anchor : Tuple(Int32, Int32)?
     property selected_border_object : BorderObject?
     property selected_hexside_object : HexsideObject?
@@ -37,6 +39,8 @@ module WargameMapToolCrystal
     getter cols : Int32
     getter rows : Int32
     getter hex_radius : Float64
+    getter sketch_shape_type : String
+    getter sketch_polygon_sides : Int32
 
     def initialize
       @zoom = 1.0
@@ -56,6 +60,10 @@ module WargameMapToolCrystal
       @hover_hex = nil
       @hover_screen = nil
       @fill_radius = 0
+      @sketch_shape_type = "rect"
+      @sketch_polygon_sides = 6
+      @sketch_freehand_closed = false
+      @sketch_perfect_circle = false
       @pending_path_anchor = nil
       @selected_border_object = nil
       @selected_hexside_object = nil
@@ -88,6 +96,10 @@ module WargameMapToolCrystal
       @hover_hex = nil
       @hover_screen = nil
       @fill_radius = 0
+      @sketch_shape_type = "rect"
+      @sketch_polygon_sides = 6
+      @sketch_freehand_closed = false
+      @sketch_perfect_circle = false
       @pending_path_anchor = nil
       @selected_border_object = nil
       @selected_hexside_object = nil
@@ -123,6 +135,29 @@ module WargameMapToolCrystal
     def active_layer_visible=(value : Bool) : Bool
       active_layer.visible = value
       value
+    end
+
+    def sketch_shape_type=(value : String) : String
+      @sketch_shape_type = normalize_sketch_shape_type(value)
+    end
+
+    def sketch_polygon_sides=(value : Int32) : Int32
+      @sketch_polygon_sides = value.clamp(3, 12)
+    end
+
+    def sketch_shape_label(shape_type : String? = nil) : String
+      case normalize_sketch_shape_type(shape_type || @sketch_shape_type)
+      when "line"
+        "Line"
+      when "polygon"
+        "Polygon"
+      when "ellipse"
+        "Ellipse"
+      when "freehand"
+        "Freehand"
+      else
+        "Rectangle"
+      end
     end
 
     def background_layer : BackgroundLayer?
@@ -462,50 +497,32 @@ module WargameMapToolCrystal
       @selected_sketch_object = nil
     end
 
+    def create_sketch_from_drag(start_point : Qt6::PointF, end_point : Qt6::PointF) : SketchObject?
+      layer = sketch_layer
+      return nil unless layer
+      object = build_sketch_drag_object(layer, @sketch_shape_type, start_point, end_point)
+      return nil unless object
+
+      finalize_new_sketch(layer, object)
+    end
+
+    def create_sketch_freehand(points : Array(Tuple(Float64, Float64))) : SketchObject?
+      layer = sketch_layer
+      return nil unless layer
+      return nil if points.size < 2
+
+      object = build_sketch_object_base(layer, "freehand", points)
+      object.closed = @sketch_freehand_closed && points.size >= 3
+      finalize_new_sketch(layer, object)
+    end
+
     def create_sketch_rectangle(start_point : Qt6::PointF, end_point : Qt6::PointF) : SketchObject?
       layer = sketch_layer
       return nil unless layer
-      return nil if (start_point.x - end_point.x).abs < 1.0 || (start_point.y - end_point.y).abs < 1.0
+      object = build_sketch_drag_object(layer, "rect", start_point, end_point)
+      return nil unless object
 
-      if index = sketch_layer_index
-        set_active_layer(index)
-      end
-
-      style_source = selected_sketch_present? ? @selected_sketch_object : nil
-      object = SketchObject.new(
-        id: next_sketch_id,
-        shape_type: "rect",
-        points: [
-          {start_point.x.to_f64, start_point.y.to_f64},
-          {end_point.x.to_f64, end_point.y.to_f64},
-        ],
-        stroke_color: style_source ? style_source.stroke_color : layer.accent,
-        stroke_width: style_source ? style_source.stroke_width : 2.0,
-        stroke_type: style_source ? style_source.stroke_type : "solid",
-        dash_length: style_source ? style_source.dash_length : 8.0,
-        gap_length: style_source ? style_source.gap_length : 4.0,
-        stroke_cap: style_source ? style_source.stroke_cap : "round",
-        fill_enabled: style_source ? style_source.fill_enabled : false,
-        fill_color: style_source ? style_source.fill_color : layer.accent,
-        fill_opacity: style_source ? style_source.fill_opacity : 0.25,
-        fill_type: style_source ? style_source.fill_type : "color",
-        fill_texture_id: style_source ? style_source.fill_texture_id : "",
-        fill_texture_zoom: style_source ? style_source.fill_texture_zoom : 1.0,
-        fill_texture_rotation: style_source ? style_source.fill_texture_rotation : 0.0,
-        rotation: style_source ? style_source.rotation : 0.0,
-        draw_over_grid: style_source ? style_source.draw_over_grid : false,
-      )
-
-      layer.add_object(object)
-      @selected_border_object = nil
-      @selected_hexside_object = nil
-      @selected_path_object = nil
-      @selected_freeform_path_object = nil
-      @selected_text_object = nil
-      @selected_asset_object = nil
-      @pending_path_anchor = nil
-      @selected_sketch_object = object
-      object
+      finalize_new_sketch(layer, object)
     end
 
     def duplicate_selected_asset : AssetObject?
@@ -2494,6 +2511,126 @@ module WargameMapToolCrystal
         json.field "blue", color.blue
         json.field "alpha", color.alpha
       end
+    end
+
+    private def normalize_sketch_shape_type(value : String?) : String
+      case value
+      when "line", "rect", "polygon", "ellipse", "freehand"
+        value
+      else
+        "rect"
+      end
+    end
+
+    private def build_sketch_drag_object(
+      layer : SketchLayer,
+      shape_type : String,
+      start_point : Qt6::PointF,
+      end_point : Qt6::PointF
+    ) : SketchObject?
+      normalized_shape = normalize_sketch_shape_type(shape_type)
+      delta_x = end_point.x.to_f64 - start_point.x.to_f64
+      delta_y = end_point.y.to_f64 - start_point.y.to_f64
+      distance = Math.sqrt(delta_x * delta_x + delta_y * delta_y)
+
+      case normalized_shape
+      when "line"
+        return nil if distance < 1.0
+
+        build_sketch_object_base(layer, "line", [
+          {start_point.x.to_f64, start_point.y.to_f64},
+          {end_point.x.to_f64, end_point.y.to_f64},
+        ])
+      when "polygon"
+        return nil if distance < 1.0
+
+        object = build_sketch_object_base(layer, "polygon", [
+          {start_point.x.to_f64, start_point.y.to_f64},
+        ])
+        object.radius = distance
+        object.num_sides = @sketch_polygon_sides
+        object
+      when "ellipse"
+        width = delta_x.abs
+        height = delta_y.abs
+        center_x = (start_point.x.to_f64 + end_point.x.to_f64) / 2.0
+        center_y = (start_point.y.to_f64 + end_point.y.to_f64) / 2.0
+        radius_x = width / 2.0
+        radius_y = height / 2.0
+
+        if @sketch_perfect_circle
+          radius = {radius_x, radius_y}.min
+          return nil if radius < 1.0
+
+          object = build_sketch_object_base(layer, "ellipse", [{center_x, center_y}])
+          object.rx = radius
+          object.ry = radius
+          object
+        else
+          return nil if radius_x < 1.0 || radius_y < 1.0
+
+          object = build_sketch_object_base(layer, "ellipse", [{center_x, center_y}])
+          object.rx = radius_x
+          object.ry = radius_y
+          object
+        end
+      when "freehand"
+        nil
+      else
+        return nil if delta_x.abs < 1.0 || delta_y.abs < 1.0
+
+        build_sketch_object_base(layer, "rect", [
+          {start_point.x.to_f64, start_point.y.to_f64},
+          {end_point.x.to_f64, end_point.y.to_f64},
+        ])
+      end
+    end
+
+    private def build_sketch_object_base(
+      layer : SketchLayer,
+      shape_type : String,
+      points : Array(Tuple(Float64, Float64))
+    ) : SketchObject
+      style_source = selected_sketch_present? ? @selected_sketch_object : nil
+
+      SketchObject.new(
+        id: next_sketch_id,
+        shape_type: normalize_sketch_shape_type(shape_type),
+        points: points,
+        num_sides: @sketch_polygon_sides,
+        stroke_color: style_source ? style_source.stroke_color : layer.accent,
+        stroke_width: style_source ? style_source.stroke_width : 2.0,
+        stroke_type: style_source ? style_source.stroke_type : "solid",
+        dash_length: style_source ? style_source.dash_length : 8.0,
+        gap_length: style_source ? style_source.gap_length : 4.0,
+        stroke_cap: style_source ? style_source.stroke_cap : "round",
+        fill_enabled: style_source ? style_source.fill_enabled : false,
+        fill_color: style_source ? style_source.fill_color : layer.accent,
+        fill_opacity: style_source ? style_source.fill_opacity : 0.25,
+        fill_type: style_source ? style_source.fill_type : "color",
+        fill_texture_id: style_source ? style_source.fill_texture_id : "",
+        fill_texture_zoom: style_source ? style_source.fill_texture_zoom : 1.0,
+        fill_texture_rotation: style_source ? style_source.fill_texture_rotation : 0.0,
+        rotation: style_source ? style_source.rotation : 0.0,
+        draw_over_grid: style_source ? style_source.draw_over_grid : false,
+      )
+    end
+
+    private def finalize_new_sketch(layer : SketchLayer, object : SketchObject) : SketchObject
+      if index = sketch_layer_index
+        set_active_layer(index)
+      end
+
+      layer.add_object(object)
+      @selected_border_object = nil
+      @selected_hexside_object = nil
+      @selected_path_object = nil
+      @selected_freeform_path_object = nil
+      @selected_text_object = nil
+      @selected_asset_object = nil
+      @pending_path_anchor = nil
+      @selected_sketch_object = object
+      object
     end
 
     private def next_sketch_id : String

@@ -113,6 +113,10 @@ module WargameMapToolCrystal
     @freeform_path_width_spin : Qt6::DoubleSpinBox
     @freeform_path_color_button : Qt6::PushButton
     @freeform_path_opacity_spin : Qt6::DoubleSpinBox
+    @sketch_shape_combo : Qt6::ComboBox
+    @sketch_polygon_sides_spin : Qt6::SpinBox
+    @sketch_freehand_closed_check : Qt6::CheckBox
+    @sketch_perfect_circle_check : Qt6::CheckBox
     @sketch_stroke_width_spin : Qt6::DoubleSpinBox
     @sketch_stroke_type_combo : Qt6::ComboBox
     @sketch_stroke_color_button : Qt6::PushButton
@@ -191,6 +195,10 @@ module WargameMapToolCrystal
       @freeform_path_width_spin = Qt6::DoubleSpinBox.new
       @freeform_path_color_button = Qt6::PushButton.new("Freeform Color")
       @freeform_path_opacity_spin = Qt6::DoubleSpinBox.new
+      @sketch_shape_combo = Qt6::ComboBox.new
+      @sketch_polygon_sides_spin = Qt6::SpinBox.new
+      @sketch_freehand_closed_check = Qt6::CheckBox.new("Close Freehand Shape")
+      @sketch_perfect_circle_check = Qt6::CheckBox.new("Perfect Circle")
       @sketch_stroke_width_spin = Qt6::DoubleSpinBox.new
       @sketch_stroke_type_combo = Qt6::ComboBox.new
       @sketch_stroke_color_button = Qt6::PushButton.new("Sketch Stroke")
@@ -1225,6 +1233,52 @@ module WargameMapToolCrystal
         @canvas.refresh("Updated freeform path opacity")
       end
 
+      @sketch_shape_combo << "Rectangle"
+      @sketch_shape_combo << "Line"
+      @sketch_shape_combo << "Polygon"
+      @sketch_shape_combo << "Ellipse"
+      @sketch_shape_combo << "Freehand"
+      @sketch_shape_combo.on_current_index_changed do |index|
+        next if @updating_panel
+
+        @state.sketch_shape_type = case index
+                                   when 1
+                                     "line"
+                                   when 2
+                                     "polygon"
+                                   when 3
+                                     "ellipse"
+                                   when 4
+                                     "freehand"
+                                   else
+                                     "rect"
+                                   end
+        refresh_inspector
+        @canvas.refresh("Sketch creation mode #{@state.sketch_shape_label}")
+      end
+
+      @sketch_polygon_sides_spin.set_range(3, 12)
+      @sketch_polygon_sides_spin.on_value_changed do |value|
+        next if @updating_panel
+
+        @state.sketch_polygon_sides = value
+        @canvas.refresh("Sketch polygon sides #{value}")
+      end
+
+      @sketch_freehand_closed_check.on_toggled do |checked|
+        next if @updating_panel
+
+        @state.sketch_freehand_closed = checked
+        @canvas.refresh(checked ? "Freehand sketches close on release" : "Freehand sketches stay open")
+      end
+
+      @sketch_perfect_circle_check.on_toggled do |checked|
+        next if @updating_panel
+
+        @state.sketch_perfect_circle = checked
+        @canvas.refresh(checked ? "Ellipse mode uses perfect circles" : "Ellipse mode uses freeform bounds")
+      end
+
       @sketch_stroke_width_spin.set_range(1.0, 12.0)
       @sketch_stroke_width_spin.decimals = 1
       @sketch_stroke_width_spin.single_step = 0.5
@@ -1516,6 +1570,13 @@ module WargameMapToolCrystal
       end
       sketch_controls = Qt6::Widget.new
       sketch_controls.vbox do |column|
+        column << Qt6::Label.new("New Sketch")
+        column << Qt6::Label.new("Shape")
+        column << @sketch_shape_combo
+        column << Qt6::Label.new("Polygon Sides")
+        column << @sketch_polygon_sides_spin
+        column << @sketch_freehand_closed_check
+        column << @sketch_perfect_circle_check
         column << Qt6::Label.new("Selected Sketch")
         column << @sketch_label
         column << Qt6::Label.new("Stroke Width")
@@ -1741,6 +1802,25 @@ module WargameMapToolCrystal
         @freeform_path_opacity_spin.enabled = false
       end
       if object = (@state.selected_sketch_object if @state.selected_sketch_present?)
+        @sketch_shape_combo.current_index = case @state.sketch_shape_type
+                                            when "line"
+                                              1
+                                            when "polygon"
+                                              2
+                                            when "ellipse"
+                                              3
+                                            when "freehand"
+                                              4
+                                            else
+                                              0
+                                            end
+        @sketch_polygon_sides_spin.value = @state.sketch_polygon_sides
+        @sketch_freehand_closed_check.checked = @state.sketch_freehand_closed
+        @sketch_perfect_circle_check.checked = @state.sketch_perfect_circle
+        @sketch_shape_combo.enabled = true
+        @sketch_polygon_sides_spin.enabled = @state.sketch_shape_type == "polygon"
+        @sketch_freehand_closed_check.enabled = @state.sketch_shape_type == "freehand"
+        @sketch_perfect_circle_check.enabled = @state.sketch_shape_type == "ellipse"
         @sketch_label.text = "Sketch: #{object.shape_type} (#{object.points.size} pts)"
         @sketch_stroke_width_spin.value = object.stroke_width
         @sketch_stroke_type_combo.current_index = case object.stroke_type
@@ -1766,6 +1846,25 @@ module WargameMapToolCrystal
         @sketch_rotation_spin.enabled = true
         @sketch_draw_over_grid_check.enabled = true
       else
+        @sketch_shape_combo.current_index = case @state.sketch_shape_type
+                                            when "line"
+                                              1
+                                            when "polygon"
+                                              2
+                                            when "ellipse"
+                                              3
+                                            when "freehand"
+                                              4
+                                            else
+                                              0
+                                            end
+        @sketch_polygon_sides_spin.value = @state.sketch_polygon_sides
+        @sketch_freehand_closed_check.checked = @state.sketch_freehand_closed
+        @sketch_perfect_circle_check.checked = @state.sketch_perfect_circle
+        @sketch_shape_combo.enabled = true
+        @sketch_polygon_sides_spin.enabled = @state.sketch_shape_type == "polygon"
+        @sketch_freehand_closed_check.enabled = @state.sketch_shape_type == "freehand"
+        @sketch_perfect_circle_check.enabled = @state.sketch_shape_type == "ellipse"
         @sketch_label.text = "Sketch: none selected"
         @sketch_stroke_width_spin.value = 2.0
         @sketch_stroke_type_combo.current_index = 0
@@ -1894,7 +1993,7 @@ module WargameMapToolCrystal
                              elsif object = (@state.selected_asset_object if @state.selected_asset_present?)
                                "Selected asset: '#{object.label}' at #{@state.zoom.round(2)}x. Click with the Asset tool to change selection, drag to move, or edit it in the inspector."
                              elsif object = (@state.selected_sketch_object if @state.selected_sketch_present?)
-                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, drag on empty space to create a rectangle, press Delete/right-click to remove it, or edit stroke, fill, rotation, and draw-over-grid settings in the inspector."
+                               "Selected sketch #{object.shape_type} at #{@state.zoom.round(2)}x. Click with the Sketch tool to change selection, drag the selected sketch to move it, #{sketch_creation_help_text}, press Delete/right-click to remove it, or edit stroke, fill, rotation, and draw-over-grid settings in the inspector."
                              elsif object = (@state.selected_text_object if @state.selected_text_present?)
                                "Selected text: '#{object.text}' at #{@state.zoom.round(2)}x. Click with the Text tool to change selection, drag to move, or edit it in the inspector."
                              elsif @state.active_tool == "Border" && (border_layer = @state.border_layer)
@@ -1904,7 +2003,7 @@ module WargameMapToolCrystal
                              elsif @state.active_tool == "Freeform" && (freeform_layer = @state.freeform_path_layer)
                                "Freeform tool active at #{@state.zoom.round(2)}x. Left-drag draws a new freeform path in world space, click an existing stroke to select it, right-click removes the hovered stroke, and #{freeform_layer.path_count} freeform paths are currently in the slice."
                              elsif @state.active_tool == "Sketch" && (sketch_layer = @state.sketch_layer)
-                               "Sketch tool active at #{@state.zoom.round(2)}x. Drag on empty space to create a rectangle, click an existing sketch to select it, drag the selected sketch to move it, and right-click/Delete removes the hovered or selected sketch. The inspector edits stroke, fill, rotation, and render-order settings. #{sketch_layer.sketch_count} sketches are currently in the slice."
+                               "Sketch tool active at #{@state.zoom.round(2)}x with #{@state.sketch_shape_label.downcase} mode. #{sketch_creation_help_text.capitalize}, click an existing sketch to select it, drag the selected sketch to move it, and right-click/Delete removes the hovered or selected sketch. The inspector now controls new-shape mode plus selected-sketch styling. #{sketch_layer.sketch_count} sketches are currently in the slice."
                              elsif @state.active_tool == "Fill" && (terrain_layer = @state.terrain_layer)
                                "Fill tool active at #{@state.zoom.round(2)}x. Left-drag paints and right-drag clears within radius #{@state.fill_radius} around the hovered hex, with #{terrain_layer.fill_count} painted so far. The inspector controls the current fill color and radius, and Edit -> Clear All Fills resets the terrain fill slice."
                              else
@@ -1917,6 +2016,29 @@ module WargameMapToolCrystal
       track_document_history
       @status_bar.show_message(message, 1800)
       refresh_inspector
+    end
+
+    private def sketch_creation_help_text : String
+      case @state.sketch_shape_type
+      when "line"
+        "drag on empty space to create a line"
+      when "polygon"
+        "drag on empty space from the polygon center to set its radius"
+      when "ellipse"
+        if @state.sketch_perfect_circle
+          "drag on empty space to create a perfect circle"
+        else
+          "drag on empty space to create an ellipse"
+        end
+      when "freehand"
+        if @state.sketch_freehand_closed
+          "drag on empty space to draw a closed freehand shape"
+        else
+          "drag on empty space to draw a freehand sketch"
+        end
+      else
+        "drag on empty space to create a rectangle"
+      end
     end
 
     private def reset_history_tracking : Nil

@@ -18,6 +18,7 @@ module WargameMapToolCrystal
     @hovered_hexside_edge : Tuple(Int32, Int32, Int32, Int32)?
     @last_hexside_drag_edge : Tuple(Int32, Int32, Int32, Int32)?
     @freeform_draw_points : Array(Tuple(Float64, Float64))
+    @sketch_draw_points : Array(Tuple(Float64, Float64))
     @hovered_path_endpoint : String?
     @fill_drag_count : Int32
     @hexside_drag_count : Int32
@@ -44,6 +45,7 @@ module WargameMapToolCrystal
       @hovered_hexside_edge = nil
       @last_hexside_drag_edge = nil
       @freeform_draw_points = [] of Tuple(Float64, Float64)
+      @sketch_draw_points = [] of Tuple(Float64, Float64)
       @hovered_path_endpoint = nil
       @fill_drag_count = 0
       @hexside_drag_count = 0
@@ -77,6 +79,7 @@ module WargameMapToolCrystal
         @hovered_hexside_edge = nil
         @last_hexside_drag_edge = nil
         @freeform_draw_points.clear
+        @sketch_draw_points.clear
         @fill_drag_count = 0
         @hexside_drag_count = 0
         @drag_mode = "pan"
@@ -169,9 +172,14 @@ module WargameMapToolCrystal
               handled_press = true
             else
               world = @state.screen_to_world(event.position)
-              @sketch_preview_start = world
-              @sketch_preview_end = world
-              @drag_mode = "sketch_pending"
+              if @state.sketch_shape_type == "freehand"
+                @sketch_draw_points << {world.x.to_f64, world.y.to_f64}
+                @drag_mode = "sketch_freehand_pending"
+              else
+                @sketch_preview_start = world
+                @sketch_preview_end = world
+                @drag_mode = "sketch_pending"
+              end
             end
           elsif event.button == 2
             if object = @state.hovered_sketch_object
@@ -321,6 +329,11 @@ module WargameMapToolCrystal
               @state.hover_screen = event.position
               @state.hover_hex = @state.pick_hex(event.position)
               @sketch_preview_end = @state.screen_to_world(event.position)
+            elsif @drag_mode == "sketch_freehand_pending" || @drag_mode == "sketch_freehand_draw"
+              @drag_mode = "sketch_freehand_draw"
+              @state.hover_screen = event.position
+              @state.hover_hex = @state.pick_hex(event.position)
+              append_sketch_draw_point(@state.screen_to_world(event.position))
             else
               @state.pan_x += dx
               @state.pan_y += dy
@@ -379,11 +392,18 @@ module WargameMapToolCrystal
           elsif @drag_mode == "sketch_draw"
             if start_point = @sketch_preview_start
               end_point = @sketch_preview_end || @state.screen_to_world(event.position)
-              if object = @state.create_sketch_rectangle(start_point, end_point)
-                refresh("Created sketch rectangle")
+              if object = @state.create_sketch_from_drag(start_point, end_point)
+                refresh("Created sketch #{object.shape_type}")
               else
                 refresh("Sketch creation failed")
               end
+            else
+              refresh("Sketch creation failed")
+            end
+          elsif @drag_mode == "sketch_freehand_draw"
+            append_sketch_draw_point(@state.screen_to_world(event.position), true)
+            if object = @state.create_sketch_freehand(@sketch_draw_points)
+              refresh("Created sketch #{object.shape_type}")
             else
               refresh("Sketch creation failed")
             end
@@ -516,6 +536,7 @@ module WargameMapToolCrystal
           @drag_freeform_path_object = nil
           @drag_freeform_point_index = nil
           @freeform_draw_points.clear
+          @sketch_draw_points.clear
           @fill_drag_count = 0
           @hexside_drag_count = 0
           @last_hexside_drag_edge = nil
@@ -839,28 +860,122 @@ module WargameMapToolCrystal
       @freeform_draw_points << point
     end
 
-    private def draw_pending_sketch_preview(painter : Qt6::QPainter) : Nil
-      return unless @drag_mode == "sketch_pending" || @drag_mode == "sketch_draw"
-      return unless start_point = @sketch_preview_start
-      return unless end_point = @sketch_preview_end
+    private def append_sketch_draw_point(world : Qt6::PointF, force : Bool = false) : Nil
+      point = {world.x.to_f64, world.y.to_f64}
 
-      start_screen = @state.screen_point(start_point)
-      end_screen = @state.screen_point(end_point)
-      rect = Qt6::RectF.new(
-        [start_screen.x, end_screen.x].min,
-        [start_screen.y, end_screen.y].min,
-        (end_screen.x - start_screen.x).abs,
-        (end_screen.y - start_screen.y).abs,
-      )
+      if last = @sketch_draw_points.last?
+        dx = point[0] - last[0]
+        dy = point[1] - last[1]
+        return if !force && Math.sqrt(dx * dx + dy * dy) < MIN_FREEFORM_POINT_DISTANCE
+      end
+
+      @sketch_draw_points << point
+    end
+
+    private def draw_pending_sketch_preview(painter : Qt6::QPainter) : Nil
+      return unless @state.active_tool == "Sketch"
+      return unless preview = build_pending_sketch_preview_object
 
       painter.save
-      preview_pen = Qt6::QPen.new(@state.active_layer.accent, 2.0)
-      preview_pen.style = Qt6::PenStyle::DashLine
-      painter.pen = preview_pen
-      painter.brush = Qt6::Color.new(0, 0, 0, 0)
-      painter.opacity = 0.75
-      painter.draw_rect(rect)
+      preview.paint(painter, @state, 0.72)
+      preview.draw_selection(painter, @state, @state.active_layer.accent)
       painter.restore
+    end
+
+    private def build_pending_sketch_preview_object : SketchObject?
+      if @drag_mode == "sketch_freehand_pending" || @drag_mode == "sketch_freehand_draw"
+        return nil if @sketch_draw_points.size < 2
+
+        object = build_preview_sketch_object("freehand", @sketch_draw_points.dup)
+        object.closed = @state.sketch_freehand_closed && @sketch_draw_points.size >= 3
+        return object
+      end
+
+      return nil unless @drag_mode == "sketch_pending" || @drag_mode == "sketch_draw"
+      return nil unless start_point = @sketch_preview_start
+      return nil unless end_point = @sketch_preview_end
+
+      delta_x = end_point.x.to_f64 - start_point.x.to_f64
+      delta_y = end_point.y.to_f64 - start_point.y.to_f64
+      distance = Math.sqrt(delta_x * delta_x + delta_y * delta_y)
+
+      case @state.sketch_shape_type
+      when "line"
+        return nil if distance < 1.0
+
+        build_preview_sketch_object("line", [
+          {start_point.x.to_f64, start_point.y.to_f64},
+          {end_point.x.to_f64, end_point.y.to_f64},
+        ])
+      when "polygon"
+        return nil if distance < 1.0
+
+        object = build_preview_sketch_object("polygon", [{start_point.x.to_f64, start_point.y.to_f64}])
+        object.radius = distance
+        object.num_sides = @state.sketch_polygon_sides
+        object
+      when "ellipse"
+        width = delta_x.abs
+        height = delta_y.abs
+        center_x = (start_point.x.to_f64 + end_point.x.to_f64) / 2.0
+        center_y = (start_point.y.to_f64 + end_point.y.to_f64) / 2.0
+        radius_x = width / 2.0
+        radius_y = height / 2.0
+
+        if @state.sketch_perfect_circle
+          radius = {radius_x, radius_y}.min
+          return nil if radius < 1.0
+
+          object = build_preview_sketch_object("ellipse", [{center_x, center_y}])
+          object.rx = radius
+          object.ry = radius
+          object
+        else
+          return nil if radius_x < 1.0 || radius_y < 1.0
+
+          object = build_preview_sketch_object("ellipse", [{center_x, center_y}])
+          object.rx = radius_x
+          object.ry = radius_y
+          object
+        end
+      else
+        return nil if delta_x.abs < 1.0 || delta_y.abs < 1.0
+
+        build_preview_sketch_object("rect", [
+          {start_point.x.to_f64, start_point.y.to_f64},
+          {end_point.x.to_f64, end_point.y.to_f64},
+        ])
+      end
+    end
+
+    private def build_preview_sketch_object(
+      shape_type : String,
+      points : Array(Tuple(Float64, Float64))
+    ) : SketchObject
+      layer = @state.sketch_layer
+      style_source = @state.selected_sketch_object if @state.selected_sketch_present?
+      accent = layer ? layer.accent : @state.active_layer.accent
+
+      SketchObject.new(
+        shape_type: shape_type,
+        points: points,
+        num_sides: @state.sketch_polygon_sides,
+        stroke_color: style_source ? style_source.stroke_color : accent,
+        stroke_width: style_source ? style_source.stroke_width : 2.0,
+        stroke_type: style_source ? style_source.stroke_type : "solid",
+        dash_length: style_source ? style_source.dash_length : 8.0,
+        gap_length: style_source ? style_source.gap_length : 4.0,
+        stroke_cap: style_source ? style_source.stroke_cap : "round",
+        fill_enabled: style_source ? style_source.fill_enabled : false,
+        fill_color: style_source ? style_source.fill_color : accent,
+        fill_opacity: style_source ? style_source.fill_opacity : 0.25,
+        fill_type: style_source ? style_source.fill_type : "color",
+        fill_texture_id: style_source ? style_source.fill_texture_id : "",
+        fill_texture_zoom: style_source ? style_source.fill_texture_zoom : 1.0,
+        fill_texture_rotation: style_source ? style_source.fill_texture_rotation : 0.0,
+        rotation: style_source ? style_source.rotation : 0.0,
+        draw_over_grid: style_source ? style_source.draw_over_grid : false,
+      )
     end
 
     private def draw_hovered_path_endpoint(painter : Qt6::QPainter) : Nil
