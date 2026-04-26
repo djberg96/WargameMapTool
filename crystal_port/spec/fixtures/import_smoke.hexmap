@@ -166,7 +166,32 @@
       "visible": true,
       "opacity": 1.0,
       "type": "draw",
-      "channels": []
+      "outline_enabled": true,
+      "outline_color": "#402010",
+      "outline_width": 3.0,
+      "shadow_enabled": true,
+      "shadow_type": "outer",
+      "shadow_color": "#000000",
+      "shadow_opacity": 0.45,
+      "shadow_angle": 110.0,
+      "shadow_distance": 6.0,
+      "shadow_spread": 12.0,
+      "shadow_size": 4.0,
+      "channels": [
+        {
+          "id": "drawchannel1",
+          "name": "Contour Wash",
+          "color": "#7c5838",
+          "opacity": 0.75,
+          "edge_color": "#b1814f",
+          "edge_distance": 12.0,
+          "edge_noise": 0.15,
+          "mask_image": "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEUlEQVR4nGP4DwENDCACxAIAiBEO87DjQLIAAAAASUVORK5CYII=",
+          "mask_world_offset_x": 90.0,
+          "mask_world_offset_y": 30.0,
+          "mask_world_scale": 0.5
+        }
+      ]
     },
     {
       "id": "textfixture",

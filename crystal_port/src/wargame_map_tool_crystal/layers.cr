@@ -1,3 +1,4 @@
+require "base64"
 require "qt6"
 
 module WargameMapToolCrystal
@@ -956,6 +957,335 @@ module WargameMapToolCrystal
         return unless @objects.includes?(selected)
 
         selected.draw_selection(painter, state, accent)
+      end
+    end
+  end
+
+  class DrawChannel
+    @cached_texture_path : String?
+    @cached_texture_image : Qt6::QImage?
+
+    property id : String
+    property name : String
+    property color : String
+    property texture_id : String
+    property texture_zoom : Float64
+    property texture_rotation : Float64
+    property opacity : Float64
+    property visible : Bool
+    property edge_color : String
+    property edge_distance : Float64
+    property edge_noise : Float64
+    property mask_world_offset_x : Float64
+    property mask_world_offset_y : Float64
+    property mask_world_scale : Float64
+    getter mask_image : Qt6::QImage?
+    getter texture_path : String?
+
+    def initialize(
+      @id : String = "draw_channel",
+      @name : String = "Channel",
+      @color : String = "#000000",
+      @texture_id : String = "",
+      @texture_zoom : Float64 = 1.0,
+      @texture_rotation : Float64 = 0.0,
+      @opacity : Float64 = 1.0,
+      @visible : Bool = true,
+      @edge_color : String = "",
+      @edge_distance : Float64 = 20.0,
+      @edge_noise : Float64 = 0.3,
+      @mask_world_offset_x : Float64 = 0.0,
+      @mask_world_offset_y : Float64 = 0.0,
+      @mask_world_scale : Float64 = 1.0,
+    )
+      @mask_image = nil
+      @texture_path = nil
+      @cached_texture_path = nil
+      @cached_texture_image = nil
+    end
+
+    def mask_image=(value : Qt6::QImage?) : Qt6::QImage?
+      @mask_image = value.try(&.convert_to_format(Qt6::ImageFormat::ARGB32Premultiplied))
+    end
+
+    def texture_path=(value : String?) : String?
+      @texture_path = value
+      @cached_texture_path = nil
+      @cached_texture_image = nil
+      value
+    end
+
+    def clear_mask : Nil
+      @mask_image = nil
+    end
+
+    def mask_rect_world : Qt6::RectF?
+      image = @mask_image
+      return nil unless image
+      return nil if image.null?
+
+      scale = @mask_world_scale
+      scale = 1.0 if scale <= 0.0
+      Qt6::RectF.new(
+        @mask_world_offset_x,
+        @mask_world_offset_y,
+        image.width / scale,
+        image.height / scale,
+      )
+    end
+
+    def rendered_image(fallback_color : Qt6::Color = Qt6::Color.new(0, 0, 0)) : Qt6::QImage?
+      mask = @mask_image
+      return nil unless mask
+      return nil if mask.null?
+
+      result = Qt6::QImage.new(mask.width, mask.height, Qt6::ImageFormat::ARGB32Premultiplied)
+      result.fill(Qt6::Color.new(0, 0, 0, 0))
+      full_rect = Qt6::RectF.new(0.0, 0.0, mask.width.to_f64, mask.height.to_f64)
+
+      Qt6::QPainter.paint(result) do |channel_painter|
+        if texture = cached_texture_image
+          brush = Qt6::QBrush.new(texture)
+          if transform = texture_transform
+            brush.transform = transform
+          end
+          channel_painter.fill_rect(full_rect, brush)
+        else
+          channel_painter.fill_rect(full_rect, color_value(fallback_color))
+        end
+        channel_painter.composition_mode = Qt6::PainterCompositionMode::DestinationIn
+        channel_painter.draw_image(0, 0, mask)
+      end
+
+      result
+    end
+
+    def write_json(json : JSON::Builder) : Nil
+      json.object do
+        json.field "id", @id
+        json.field "name", @name
+        if @texture_id.empty?
+          json.field "color", @color
+        else
+          json.field "texture_id", @texture_id
+          json.field "texture_zoom", @texture_zoom if (@texture_zoom - 1.0).abs > 0.0001
+          json.field "texture_rotation", @texture_rotation if @texture_rotation.abs > 0.0001
+        end
+        json.field "opacity", @opacity if (@opacity - 1.0).abs > 0.0001
+        json.field "visible", false unless @visible
+        unless @edge_color.empty?
+          json.field "edge_color", @edge_color
+          json.field "edge_distance", @edge_distance
+          json.field "edge_noise", @edge_noise
+        end
+
+        image = @mask_image
+        if image && !image.null?
+          json.field "mask_image", Base64.strict_encode(image.save_to_data("PNG"))
+          json.field "mask_world_offset_x", @mask_world_offset_x
+          json.field "mask_world_offset_y", @mask_world_offset_y
+          json.field "mask_world_scale", @mask_world_scale
+        end
+      end
+    end
+
+    def self.from_json(data : JSON::Any) : self
+      channel = new(
+        data["id"]?.try(&.as_s?) || "draw_channel",
+        data["name"]?.try(&.as_s?) || "Channel",
+        data["color"]?.try(&.as_s?) || "#000000",
+        data["texture_id"]?.try(&.as_s?) || "",
+        json_number(data["texture_zoom"]?) || 1.0,
+        json_number(data["texture_rotation"]?) || 0.0,
+        json_number(data["opacity"]?) || 1.0,
+        data["visible"]?.try(&.as_bool?) != false,
+        data["edge_color"]?.try(&.as_s?) || "",
+        json_number(data["edge_distance"]?) || 20.0,
+        json_number(data["edge_noise"]?) || 0.3,
+        json_number(data["mask_world_offset_x"]?) || 0.0,
+        json_number(data["mask_world_offset_y"]?) || 0.0,
+        json_number(data["mask_world_scale"]?) || 1.0,
+      )
+
+      if encoded = data["mask_image"]?.try(&.as_s?)
+        begin
+          image = Qt6::QImage.from_data(Base64.decode(encoded), "PNG")
+          channel.mask_image = image unless image.null?
+        rescue Base64::Error
+        end
+      end
+
+      channel
+    end
+
+    private def cached_texture_image : Qt6::QImage?
+      path = @texture_path
+      return nil unless path
+      return nil unless File.exists?(path)
+
+      if @cached_texture_path != path
+        image = Qt6::QImage.from_file(path)
+        @cached_texture_image = image.null? ? nil : image.convert_to_format(Qt6::ImageFormat::ARGB32Premultiplied)
+        @cached_texture_path = path
+      end
+
+      @cached_texture_image
+    end
+
+    private def texture_transform : Qt6::QTransform?
+      needs_rotation = @texture_rotation.abs > 0.0001
+      needs_scale = (@texture_zoom - 1.0).abs > 0.0001 && @texture_zoom > 0.0
+      return nil unless needs_rotation || needs_scale
+
+      transform = Qt6::QTransform.new
+      transform.rotate(@texture_rotation) if needs_rotation
+      if needs_scale
+        inverse_zoom = 1.0 / @texture_zoom
+        transform.scale(inverse_zoom, inverse_zoom)
+      end
+      transform
+    end
+
+    private def color_value(default : Qt6::Color) : Qt6::Color
+      self.class.color_from_hex(@color, default)
+    end
+
+    private def self.json_number(value : JSON::Any?) : Float64?
+      return nil unless value
+
+      value.as_f? || value.as_i?.try(&.to_f64)
+    end
+
+    def self.color_from_hex(value : String, default : Qt6::Color) : Qt6::Color
+      clean = value.starts_with?("#") ? value[1..] : value
+      return default unless clean.size == 6 || clean.size == 8
+
+      if clean.size == 6
+        red = clean[0, 2].to_i?(16)
+        green = clean[2, 2].to_i?(16)
+        blue = clean[4, 2].to_i?(16)
+        return default unless red && green && blue
+        Qt6::Color.new(red, green, blue, 255)
+      else
+        alpha = clean[0, 2].to_i?(16)
+        red = clean[2, 2].to_i?(16)
+        green = clean[4, 2].to_i?(16)
+        blue = clean[6, 2].to_i?(16)
+        return default unless alpha && red && green && blue
+        Qt6::Color.new(red, green, blue, alpha)
+      end
+    end
+  end
+
+  class DrawLayer < MapLayer
+    @outline_enabled : Bool = false
+    @outline_color : String = "#000000"
+    @outline_width : Float64 = 2.0
+    @shadow_enabled : Bool = false
+    @shadow_type : String = "outer"
+    @shadow_color : String = "#000000"
+    @shadow_opacity : Float64 = 0.5
+    @shadow_angle : Float64 = 120.0
+    @shadow_distance : Float64 = 5.0
+    @shadow_spread : Float64 = 0.0
+    @shadow_size : Float64 = 5.0
+    @bevel_enabled : Bool = false
+    @bevel_type : String = "inner"
+    @bevel_angle : Float64 = 120.0
+    @bevel_size : Float64 = 3.0
+    @bevel_depth : Float64 = 0.5
+    @bevel_highlight_color : String = "#ffffff"
+    @bevel_highlight_opacity : Float64 = 0.75
+    @bevel_shadow_color : String = "#000000"
+    @bevel_shadow_opacity : Float64 = 0.75
+    @structure_enabled : Bool = false
+    @structure_texture_id : String? = nil
+    @structure_scale : Float64 = 1.0
+    @structure_depth : Float64 = 50.0
+    @structure_invert : Bool = false
+
+    getter channels : Array(DrawChannel)
+
+    property outline_enabled
+    property outline_color
+    property outline_width
+    property shadow_enabled
+    property shadow_type
+    property shadow_color
+    property shadow_opacity
+    property shadow_angle
+    property shadow_distance
+    property shadow_spread
+    property shadow_size
+    property bevel_enabled
+    property bevel_type
+    property bevel_angle
+    property bevel_size
+    property bevel_depth
+    property bevel_highlight_color
+    property bevel_highlight_opacity
+    property bevel_shadow_color
+    property bevel_shadow_opacity
+    property structure_enabled
+    property structure_texture_id
+    property structure_scale
+    property structure_depth
+    property structure_invert
+
+    def initialize(name : String, kind : String, visible : Bool, accent : Qt6::Color, opacity : Int32 = 100)
+      super(name, kind, visible, accent, opacity)
+      @channels = [] of DrawChannel
+      reset_effects
+    end
+
+    def reset_effects : Nil
+      @outline_enabled = false
+      @outline_color = "#000000"
+      @outline_width = 2.0
+      @shadow_enabled = false
+      @shadow_type = "outer"
+      @shadow_color = "#000000"
+      @shadow_opacity = 0.5
+      @shadow_angle = 120.0
+      @shadow_distance = 5.0
+      @shadow_spread = 0.0
+      @shadow_size = 5.0
+      @bevel_enabled = false
+      @bevel_type = "inner"
+      @bevel_angle = 120.0
+      @bevel_size = 3.0
+      @bevel_depth = 0.5
+      @bevel_highlight_color = "#ffffff"
+      @bevel_highlight_opacity = 0.75
+      @bevel_shadow_color = "#000000"
+      @bevel_shadow_opacity = 0.75
+      @structure_enabled = false
+      @structure_texture_id = nil
+      @structure_scale = 1.0
+      @structure_depth = 50.0
+      @structure_invert = false
+    end
+
+    def clear_channels : Nil
+      @channels.clear
+    end
+
+    def add_channel(channel : DrawChannel) : Nil
+      @channels << channel
+    end
+
+    def paint(painter : Qt6::QPainter, state : MapState) : Nil
+      layer_opacity = opacity / 100.0
+
+      @channels.reverse_each do |channel|
+        next unless channel.visible
+        next unless world_rect = channel.mask_rect_world
+        next unless image = channel.rendered_image(accent)
+
+        painter.save
+        painter.opacity = (layer_opacity * channel.opacity).clamp(0.0, 1.0)
+        painter.draw_image(state.screen_rect(world_rect), image)
+        painter.restore
       end
     end
   end

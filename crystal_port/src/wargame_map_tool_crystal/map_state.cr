@@ -222,6 +222,14 @@ module WargameMapToolCrystal
       nil
     end
 
+    def draw_layer : DrawLayer?
+      @layers.each do |layer|
+        return layer.as(DrawLayer) if layer.is_a?(DrawLayer)
+      end
+
+      nil
+    end
+
     def hexside_layer : HexsideLayer?
       @layers.each do |layer|
         return layer.as(HexsideLayer) if layer.is_a?(HexsideLayer)
@@ -289,6 +297,14 @@ module WargameMapToolCrystal
     def freeform_path_layer_index : Int32?
       @layers.each_with_index do |layer, index|
         return index.to_i32 if layer.is_a?(FreeformPathLayer)
+      end
+
+      nil
+    end
+
+    def draw_layer_index : Int32?
+      @layers.each_with_index do |layer, index|
+        return index.to_i32 if layer.is_a?(DrawLayer)
       end
 
       nil
@@ -812,6 +828,9 @@ module WargameMapToolCrystal
           json.field "freeform_path_layer" do
             write_object_layer_snapshot(json, freeform_path_layer)
           end
+          json.field "draw_layer" do
+            write_draw_layer_snapshot(json, draw_layer)
+          end
           json.field "sketch_layer" do
             write_object_layer_snapshot(json, sketch_layer)
           end
@@ -877,6 +896,7 @@ module WargameMapToolCrystal
       restore_hexside_layer_snapshot(data["hexside_layer"]?)
       restore_path_layer_snapshot(data["path_layer"]?)
       restore_freeform_path_layer_snapshot(data["freeform_path_layer"]?)
+      restore_draw_layer_snapshot(data["draw_layer"]?)
       restore_sketch_layer_snapshot(data["sketch_layer"]?)
       restore_text_layer_snapshot(data["text_layer"]?)
       restore_asset_layer_snapshot(data["asset_layer"]?)
@@ -1029,6 +1049,10 @@ module WargameMapToolCrystal
             end
           end
 
+          json.field "draw_layer" do
+            write_draw_layer_snapshot(json, draw_layer)
+          end
+
           json.field "sketch_objects" do
             if layer = sketch_layer
               json.array do
@@ -1169,6 +1193,8 @@ module WargameMapToolCrystal
         end
       end
 
+      restore_draw_layer_snapshot(data["draw_layer"]?)
+
       data["sketch_objects"]?.try(&.as_a?).try do |objects|
         if layer = sketch_layer
           layer.clear_objects
@@ -1225,6 +1251,8 @@ module WargameMapToolCrystal
             import_path_layer(layer_data)
           when "freeform_path"
             import_freeform_path_layer(layer_data)
+          when "draw"
+            import_draw_layer(path, layer_data)
           when "sketch"
             import_sketch_layer(layer_data)
           when "text"
@@ -1276,6 +1304,9 @@ module WargameMapToolCrystal
               if layer = freeform_path_layer
                 write_hexmap_freeform_path_layer(json, layer)
               end
+              if layer = draw_layer
+                write_hexmap_draw_layer(json, layer)
+              end
               if layer = sketch_layer
                 write_hexmap_sketch_layer(json, layer)
               end
@@ -1301,6 +1332,7 @@ module WargameMapToolCrystal
       seed_default_path_objects(path_layer)
       freeform_path_layer = FreeformPathLayer.new("Freeform Paths", "Freeform Paths", true, Qt6::Color.new(82, 122, 164))
       seed_default_freeform_path_objects(freeform_path_layer)
+      draw_layer = DrawLayer.new("Draw", "Draw", true, Qt6::Color.new(98, 76, 58))
       sketch_layer = SketchLayer.new("Sketches", "Sketch", true, Qt6::Color.new(120, 96, 62))
 
       border_layer = BorderLayer.new("Borders", "Borders", true, Qt6::Color.new(58, 54, 48))
@@ -1319,6 +1351,7 @@ module WargameMapToolCrystal
         hexside_layer,
         path_layer,
         freeform_path_layer,
+        draw_layer,
         sketch_layer,
         text_layer,
         asset_layer,
@@ -1523,6 +1556,12 @@ module WargameMapToolCrystal
       hexside_layer.try(&.clear_hexsides)
       path_layer.try(&.clear_paths)
       freeform_path_layer.try(&.clear_paths)
+      if layer = draw_layer
+        layer.clear_channels
+        layer.visible = true
+        layer.opacity = 100
+        layer.reset_effects
+      end
       sketch_layer.try(&.clear_objects)
       text_layer.try(&.clear_texts)
       asset_layer.try(&.clear_assets)
@@ -1740,6 +1779,13 @@ module WargameMapToolCrystal
       end
 
       layer.accent = first_color.not_nil! if first_color
+    end
+
+    private def import_draw_layer(project_path : String, data : JSON::Any) : Nil
+      layer = draw_layer
+      return unless layer
+
+      apply_draw_layer_state(layer, data, project_path)
     end
 
     private def import_text_layer(data : JSON::Any) : Nil
@@ -2011,6 +2057,46 @@ module WargameMapToolCrystal
       end
     end
 
+    private def write_hexmap_draw_layer(json : JSON::Builder, layer : DrawLayer) : Nil
+      json.object do
+        write_hexmap_layer_base(json, layer, "draw", "crystal_draw")
+        json.field "channels" do
+          json.array do
+            layer.channels.each do |channel|
+              channel.write_json(json)
+            end
+          end
+        end
+        json.field "outline_enabled", layer.outline_enabled
+        json.field "outline_color", layer.outline_color
+        json.field "outline_width", layer.outline_width
+        json.field "shadow_enabled", layer.shadow_enabled
+        json.field "shadow_type", layer.shadow_type
+        json.field "shadow_color", layer.shadow_color
+        json.field "shadow_opacity", layer.shadow_opacity
+        json.field "shadow_angle", layer.shadow_angle
+        json.field "shadow_distance", layer.shadow_distance
+        json.field "shadow_spread", layer.shadow_spread
+        json.field "shadow_size", layer.shadow_size
+        json.field "bevel_enabled", layer.bevel_enabled
+        json.field "bevel_type", layer.bevel_type
+        json.field "bevel_angle", layer.bevel_angle
+        json.field "bevel_size", layer.bevel_size
+        json.field "bevel_depth", layer.bevel_depth
+        json.field "bevel_highlight_color", layer.bevel_highlight_color
+        json.field "bevel_highlight_opacity", layer.bevel_highlight_opacity
+        json.field "bevel_shadow_color", layer.bevel_shadow_color
+        json.field "bevel_shadow_opacity", layer.bevel_shadow_opacity
+        json.field "structure_enabled", layer.structure_enabled
+        if texture_id = layer.structure_texture_id
+          json.field "structure_texture_id", texture_id
+        end
+        json.field "structure_scale", layer.structure_scale
+        json.field "structure_depth", layer.structure_depth
+        json.field "structure_invert", layer.structure_invert
+      end
+    end
+
     private def write_hexmap_text_layer(json : JSON::Builder, layer : TextLayer) : Nil
       json.object do
         write_hexmap_layer_base(json, layer, "text", "crystal_text")
@@ -2102,6 +2188,13 @@ module WargameMapToolCrystal
       end
 
       File.expand_path(asset_path, File.dirname(project_path))
+    end
+
+    private def resolve_draw_texture_reference(reference_path : String?, texture_id : String) : String?
+      return nil if texture_id.empty?
+      return nil unless path = reference_path
+
+      resolve_project_asset_path(path, texture_id)
     end
 
     private def builtin_assets_root : String
@@ -2429,6 +2522,51 @@ module WargameMapToolCrystal
       end
     end
 
+    private def write_draw_layer_snapshot(json : JSON::Builder, layer : DrawLayer | Nil) : Nil
+      unless layer
+        json.null
+        return
+      end
+
+      json.object do
+        write_layer_snapshot_base(json, layer)
+        json.field "outline_enabled", layer.outline_enabled
+        json.field "outline_color", layer.outline_color
+        json.field "outline_width", layer.outline_width
+        json.field "shadow_enabled", layer.shadow_enabled
+        json.field "shadow_type", layer.shadow_type
+        json.field "shadow_color", layer.shadow_color
+        json.field "shadow_opacity", layer.shadow_opacity
+        json.field "shadow_angle", layer.shadow_angle
+        json.field "shadow_distance", layer.shadow_distance
+        json.field "shadow_spread", layer.shadow_spread
+        json.field "shadow_size", layer.shadow_size
+        json.field "bevel_enabled", layer.bevel_enabled
+        json.field "bevel_type", layer.bevel_type
+        json.field "bevel_angle", layer.bevel_angle
+        json.field "bevel_size", layer.bevel_size
+        json.field "bevel_depth", layer.bevel_depth
+        json.field "bevel_highlight_color", layer.bevel_highlight_color
+        json.field "bevel_highlight_opacity", layer.bevel_highlight_opacity
+        json.field "bevel_shadow_color", layer.bevel_shadow_color
+        json.field "bevel_shadow_opacity", layer.bevel_shadow_opacity
+        json.field "structure_enabled", layer.structure_enabled
+        if texture_id = layer.structure_texture_id
+          json.field "structure_texture_id", texture_id
+        end
+        json.field "structure_scale", layer.structure_scale
+        json.field "structure_depth", layer.structure_depth
+        json.field "structure_invert", layer.structure_invert
+        json.field "channels" do
+          json.array do
+            layer.channels.each do |channel|
+              channel.write_json(json)
+            end
+          end
+        end
+      end
+    end
+
     private def apply_layer_snapshot_base(layer : MapLayer, data : JSON::Any) : Nil
       layer.visible = data["visible"]?.try(&.as_bool?) != false
       layer.opacity = ((data["opacity"]?.try(&.as_i?) || layer.opacity).to_i32).clamp(0, 100)
@@ -2495,6 +2633,17 @@ module WargameMapToolCrystal
       end
     end
 
+    private def restore_draw_layer_snapshot(data : JSON::Any?) : Nil
+      layer = draw_layer
+      return unless layer
+
+      layer.clear_channels
+      layer.reset_effects
+      return unless layer_data = data
+
+      apply_draw_layer_state(layer, layer_data, @source_path || @project_path)
+    end
+
     private def restore_text_layer_snapshot(data : JSON::Any?) : Nil
       layer = text_layer
       return unless layer
@@ -2548,6 +2697,44 @@ module WargameMapToolCrystal
             asset.set_image_path(image_path)
           end
           layer.add_asset(asset)
+        end
+      end
+    end
+
+    private def apply_draw_layer_state(layer : DrawLayer, data : JSON::Any, reference_path : String?) : Nil
+      layer.clear_channels
+      layer.reset_effects
+      apply_layer_base(layer, data)
+      layer.outline_enabled = data["outline_enabled"]?.try(&.as_bool?) || false
+      layer.outline_color = data["outline_color"]?.try(&.as_s?) || "#000000"
+      layer.outline_width = json_number(data["outline_width"]?) || 2.0
+      layer.shadow_enabled = data["shadow_enabled"]?.try(&.as_bool?) || false
+      layer.shadow_type = data["shadow_type"]?.try(&.as_s?) || "outer"
+      layer.shadow_color = data["shadow_color"]?.try(&.as_s?) || "#000000"
+      layer.shadow_opacity = json_number(data["shadow_opacity"]?) || 0.5
+      layer.shadow_angle = json_number(data["shadow_angle"]?) || 120.0
+      layer.shadow_distance = json_number(data["shadow_distance"]?) || 5.0
+      layer.shadow_spread = json_number(data["shadow_spread"]?) || 0.0
+      layer.shadow_size = json_number(data["shadow_size"]?) || (json_number(data["shadow_blur_radius"]?) || 5.0)
+      layer.bevel_enabled = data["bevel_enabled"]?.try(&.as_bool?) || false
+      layer.bevel_type = data["bevel_type"]?.try(&.as_s?) || "inner"
+      layer.bevel_angle = json_number(data["bevel_angle"]?) || 120.0
+      layer.bevel_size = json_number(data["bevel_size"]?) || 3.0
+      layer.bevel_depth = json_number(data["bevel_depth"]?) || 0.5
+      layer.bevel_highlight_color = data["bevel_highlight_color"]?.try(&.as_s?) || "#ffffff"
+      layer.bevel_highlight_opacity = json_number(data["bevel_highlight_opacity"]?) || 0.75
+      layer.bevel_shadow_color = data["bevel_shadow_color"]?.try(&.as_s?) || "#000000"
+      layer.bevel_shadow_opacity = json_number(data["bevel_shadow_opacity"]?) || 0.75
+      layer.structure_enabled = data["structure_enabled"]?.try(&.as_bool?) || false
+      layer.structure_texture_id = data["structure_texture_id"]?.try(&.as_s?)
+      layer.structure_scale = json_number(data["structure_scale"]?) || 1.0
+      layer.structure_depth = json_number(data["structure_depth"]?) || 50.0
+      layer.structure_invert = data["structure_invert"]?.try(&.as_bool?) || false
+      data["channels"]?.try(&.as_a?).try do |channels|
+        channels.each do |channel_data|
+          channel = DrawChannel.from_json(channel_data)
+          channel.texture_path = resolve_draw_texture_reference(reference_path, channel.texture_id)
+          layer.add_channel(channel)
         end
       end
     end

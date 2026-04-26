@@ -9,7 +9,6 @@ describe WargameMapToolCrystal::MapState do
     message = state.load_hexmap(fixture_path)
     message.should_not be_nil
     message.not_nil!.should contain("Opened import_smoke.hexmap")
-    message.not_nil!.should contain("skipped draw")
 
     state.source_path.should eq(fixture_path)
     state.project_path.should be_nil
@@ -61,6 +60,19 @@ describe WargameMapToolCrystal::MapState do
     freeform.path_count.should eq(1)
     freeform.objects.first.points.size.should eq(3)
 
+    draw = state.draw_layer.not_nil!
+    draw.channels.size.should eq(1)
+    draw.outline_enabled.should be_true
+    draw.outline_color.should eq("#402010")
+    draw.shadow_enabled.should be_true
+    draw.shadow_opacity.should eq(0.45)
+    draw.channels.first.name.should eq("Contour Wash")
+    draw.channels.first.opacity.should eq(0.75)
+    draw.channels.first.mask_image.should_not be_nil
+    draw.channels.first.mask_image.not_nil!.width.should eq(2)
+    draw.channels.first.mask_world_offset_x.should eq(90.0)
+    draw.channels.first.mask_world_scale.should eq(0.5)
+
     text = state.text_layer.not_nil!
     text.text_count.should eq(1)
     text.objects.first.text.should eq("Depot")
@@ -107,7 +119,17 @@ describe WargameMapToolCrystal::MapState do
       exported["grid"]["first_row_offset"].as_s.should eq("odd")
 
       layer_types = exported["layers"].as_a.map { |layer| layer["type"].as_s }
-      layer_types.should eq(["background", "fill", "hexside", "border", "path", "freeform_path", "sketch", "text", "asset"])
+      layer_types.should eq(["background", "fill", "hexside", "border", "path", "freeform_path", "draw", "sketch", "text", "asset"])
+
+      draw_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "draw" }
+      draw_layer.should_not be_nil
+      draw_layer.not_nil!["channels"].as_a.size.should eq(1)
+      draw_layer.not_nil!["outline_enabled"].as_bool.should be_true
+      draw_layer.not_nil!["outline_color"].as_s.should eq("#402010")
+      draw_layer.not_nil!["shadow_enabled"].as_bool.should be_true
+      draw_layer.not_nil!["shadow_opacity"].as_f.should eq(0.45)
+      draw_layer.not_nil!["channels"].as_a.first["color"].as_s.should eq("#7c5838")
+      draw_layer.not_nil!["channels"].as_a.first["mask_image"].as_s.empty?.should be_false
 
       sketch_layer = exported["layers"].as_a.find { |layer| layer["type"].as_s == "sketch" }
       sketch_layer.should_not be_nil
@@ -136,6 +158,9 @@ describe WargameMapToolCrystal::MapState do
       roundtrip.first_row_offset.should eq("odd")
       roundtrip.asset_layer.not_nil!.asset_count.should eq(1)
       roundtrip.asset_layer.not_nil!.objects.first.has_image?.should be_true
+      roundtrip.draw_layer.not_nil!.channels.size.should eq(1)
+      roundtrip.draw_layer.not_nil!.outline_enabled.should be_true
+      roundtrip.draw_layer.not_nil!.channels.first.mask_image.should_not be_nil
       roundtrip.sketch_layer.not_nil!.sketch_count.should eq(1)
       roundtrip.sketch_layer.not_nil!.shadow_enabled.should be_true
       roundtrip.sketch_layer.not_nil!.shadow_type.should eq("inner")

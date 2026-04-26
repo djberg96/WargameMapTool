@@ -24,6 +24,7 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 - object-backed hexside layer with edge hover feedback, click-to-place/select interaction, left-drag placement, right-drag/Delete/Edit-menu removal, inspector-based width/color/opacity editing, and Crystal slice JSON persistence
 - object-backed path layer with explicit Path-tool selection, neighboring-hex-constrained two-click path creation, preview feedback, neighboring-hex-constrained endpoint hover/drag reshaping feedback, keyboard delete/cancel support, inspector-based width/color/line-style/opacity editing, duplicate/delete actions, and Crystal slice JSON persistence
 - object-backed freeform path layer with world-space drag drawing, click-to-select interaction, visible control-point handles with direct point dragging on the selected stroke, whole-stroke dragging when the selected path body is dragged, right-click/Delete/Edit-menu removal, a live draw preview, inspector-based width/color/opacity editing, and Crystal slice JSON persistence
+- object-backed draw layer with channel-mask `.hexmap`/slice persistence, decoded mask rendering for color-backed channels, and preserved draw-layer effect/channel metadata for source-compatible round trips
 - object-backed sketch layer with `.hexmap`/slice persistence, imported shape rendering, smoothed freehand stroke rendering, click-select, drag-move, corner-handle resize, rotation-handle editing, sketch copy/paste duplication, right-click/Delete removal, drag-to-create line/rectangle/polygon/ellipse/freehand sketches in the Sketch tool, creation-mode controls for shape/sides/closed/perfect-circle/snap defaults, snapped select-mode move/resize interactions, actual draw-over-grid render ordering, layer-level shadow rendering, and inspector-based stroke/fill/rotation/draw-over-grid editing plus dash/gap/cap and layer-shadow controls
 - object-backed asset layer with image-backed placement, fallback token rendering, and Crystal slice JSON persistence
 - explicit asset selection via canvas clicks when the Asset tool is active, with add/duplicate/drag-move/replace-image/reset/delete actions, working snap-to-hex behavior, and inspector-based scale, rotation, opacity, snap, and image-path visibility
@@ -45,10 +46,10 @@ This directory is a practical port spike for WargameMapTool, not a full rewrite.
 ## What Is Still Missing
 
 - full command-stack parity with the Python app beyond the current snapshot-based undo/redo
-- the remaining real data-backed layer implementations from the Python app beyond background, terrain fills, borders, hexsides, paths, freeform paths, sketches, assets, and text
 - asset libraries, texture libraries, palette editors, and manager dialogs
 - asset-layer editing parity beyond basic create/duplicate/select/move/replace/reset/delete actions, snap-to-hex editing, inspector editing of core object properties, fallback rendering, and slice-state persistence
 - background-layer editing parity beyond basic image import, transform, and slice-state persistence
+- draw-layer editing/render parity beyond basic channel-mask import/export/snapshot persistence and color-backed mask rendering, including brush painting, texture/effect rendering fidelity, and channel-management UI
 - fill-layer editing parity beyond a single active fill color with preset swatches, adjustable radius, and a clear-all action, per-hex color paint/erase, and broader brush-setting persistence
 - border-layer editing parity beyond straight edge placement/selection/removal, simple style editing, and slice-state persistence
 - hexside-layer editing parity beyond straight shared-edge click-or-drag placement/selection/removal, simple width/color/opacity editing, and slice-state persistence
